@@ -19,7 +19,7 @@ router.get('/:slug', async (req, res) => {
 // 🌟 NOTICE: The path is just '/register', NOT '/api/stores/register'
 router.post('/register', async (req, res) => {
   try {
-    const { name, slug, email, password, tagline, themeColor } = req.body;
+    const { name, slug, email, password, tagline, themeColor, softwareType, primaryColor: clientPrimary, bgColor: clientBg, hoverColor: clientHover } = req.body;
     const formattedSlug = slug.toLowerCase().replace(/\s+/g, '-').trim();
 
     const existingStore = await Store.findOne({ 
@@ -33,7 +33,10 @@ router.post('/register', async (req, res) => {
     const salt = await bcrypt.genSalt(10);
     const hashedPassword = await bcrypt.hash(password, salt);
 
-    let primaryColor = "text-red-600", bgColor = "bg-red-600", hoverColor = "hover:bg-red-700";
+    let primaryColor = clientPrimary || "text-[#5C0E1E]";
+    let bgColor = clientBg || "bg-[#5C0E1E]";
+    let hoverColor = clientHover || "hover:bg-[#3F0712]";
+
     if (themeColor === 'blue') { primaryColor = "text-blue-600"; bgColor = "bg-blue-600"; hoverColor = "hover:bg-blue-700"; }
     else if (themeColor === 'emerald') { primaryColor = "text-emerald-600"; bgColor = "bg-emerald-600"; hoverColor = "hover:bg-emerald-700"; }
 
@@ -43,6 +46,7 @@ router.post('/register', async (req, res) => {
       email: email.toLowerCase().trim(), 
       password: hashedPassword, 
       tagline, 
+      softwareType: softwareType || "restaurant",
       primaryColor, 
       bgColor, 
       hoverColor 
