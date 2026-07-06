@@ -92,4 +92,44 @@ router.post('/login', async (req, res) => {
   }
 });
 
+// 👥 STAFF: Get all staff members for a store
+router.get('/:slug/staff', async (req, res) => {
+  try {
+    const Staff = require('../models/Staff');
+    const staff = await Staff.find({ storeSlug: req.params.slug.toLowerCase().trim() });
+    res.json(staff);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// 👥 STAFF: Create a new staff member
+router.post('/:slug/staff', async (req, res) => {
+  try {
+    const Staff = require('../models/Staff');
+    const { name, role, email, phone } = req.body;
+    const member = await Staff.create({
+      storeSlug: req.params.slug.toLowerCase().trim(),
+      name,
+      role,
+      email,
+      phone
+    });
+    res.status(201).json(member);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// 👥 STAFF: Delete a staff member
+router.delete('/:slug/staff/:id', async (req, res) => {
+  try {
+    const Staff = require('../models/Staff');
+    await Staff.findByIdAndDelete(req.params.id);
+    res.json({ message: "Staff member deleted successfully." });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 module.exports = router;
