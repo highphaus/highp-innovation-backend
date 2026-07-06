@@ -2,7 +2,7 @@ const mongoose = require('mongoose');
 
 const connectDB = async () => {
   try {
-    const mongoURI = process.env.MONGO_URI || process.env.DATABASE_URL;
+    const mongoURI = process.env.MONGO_URI || process.env.DATABASE_URL || "mongodb+srv://highphaus_db_user:GewiLhKoE1vHJBmM@trail.7ypewaq.mongodb.net/tastenpark";
     if (!mongoURI) {
       console.error("❌ Corporate Cloud Setup Failure: Missing connection string inside .env");
       process.exit(1);
