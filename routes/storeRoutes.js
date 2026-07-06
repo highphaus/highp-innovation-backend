@@ -19,7 +19,7 @@ router.get('/:slug', async (req, res) => {
 // 🌟 NOTICE: The path is just '/register', NOT '/api/stores/register'
 router.post('/register', async (req, res) => {
   try {
-    const { name, slug, email, password, tagline, themeColor, softwareType, primaryColor: clientPrimary, bgColor: clientBg, hoverColor: clientHover } = req.body;
+    const { name, slug, email, password, tagline, themeColor, softwareType, primaryColor: clientPrimary, bgColor: clientBg, hoverColor: clientHover, subscriptionPlan } = req.body;
     const formattedSlug = slug.toLowerCase().replace(/\s+/g, '-').trim();
 
     const existingStore = await Store.findOne({ 
@@ -49,7 +49,9 @@ router.post('/register', async (req, res) => {
       softwareType: softwareType || "restaurant",
       primaryColor, 
       bgColor, 
-      hoverColor 
+      hoverColor,
+      isApproved: false, // Must be approved by admin
+      subscriptionPlan: subscriptionPlan || "basic"
     });
 
     const token = jwt.sign(
@@ -58,7 +60,7 @@ router.post('/register', async (req, res) => {
       { expiresIn: '24h' }
     );
 
-    res.status(201).json({ token, slug: store.slug });
+    res.status(201).json({ token, slug: store.slug, isApproved: false });
   } catch (err) {
     console.error("❌ Registration Pipeline Failure:", err);
     res.status(500).json({ message: err.message });
@@ -74,10 +76,14 @@ router.post('/login', async (req, res) => {
       email: email.toLowerCase().trim() 
     });
 
-    if (!store) return res.status(401).json({ message: "Invalid credentials. Store or account not found." });
+    if (!store) return res.status(410).json({ message: "Store or account not found." });
 
     const isMatch = await bcrypt.compare(password, store.password);
     if (!isMatch) return res.status(401).json({ message: "Incorrect password. Access denied." });
+
+    if (!store.isApproved) {
+      return res.status(403).json({ message: "Access Denied. Your tenant account is pending approval or subscription activation." });
+    }
 
     const token = jwt.sign(
       { storeId: store._id, slug: store.slug, role: 'admin' },

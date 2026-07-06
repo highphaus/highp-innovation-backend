@@ -5,11 +5,12 @@ const MONGO_URI = process.env.MONGO_URI || 'mongodb://localhost:27017/highp';
 
 mongoose.connect(MONGO_URI)
   .then(async () => {
+    // Approve all existing stores and set softwareType if missing
     const result = await Store.updateMany(
-      { softwareType: { $exists: false } },
-      { $set: { softwareType: 'restaurant' } }
+      {},
+      { $set: { isApproved: true, softwareType: 'restaurant' } }
     );
-    console.log(`✅ Migrated ${result.modifiedCount} legacy stores → softwareType: 'restaurant'`);
+    console.log(`✅ Approved and updated ${result.modifiedCount} legacy stores`);
     mongoose.disconnect();
   })
   .catch(err => {
