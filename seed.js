@@ -65,6 +65,30 @@ async function seed() {
     await Product.insertMany(productsToInsert);
     console.log("✅ Seeded 6 premium MNC-level products successfully!");
 
+    // Delete existing store for tastenpark to avoid duplicates on seed
+    await Store.deleteMany({ slug: "tastenpark" });
+    console.log("🧹 Cleared old store for 'tastenpark'.");
+
+    // Insert approved tastenpark store
+    const bcrypt = require('bcryptjs');
+    const salt = await bcrypt.genSalt(10);
+    const hashedPassword = await bcrypt.hash("password123", salt);
+
+    await Store.create({
+      name: "Taste N Park",
+      slug: "tastenpark",
+      email: "admin@tastenpark.com",
+      password: hashedPassword,
+      tagline: "Gourmet Artisan Kitchen",
+      softwareType: "restaurant",
+      primaryColor: "text-[#5C0E1E]",
+      bgColor: "bg-[#5C0E1E]",
+      hoverColor: "hover:bg-[#3F0712]",
+      isApproved: true,
+      subscriptionPlan: "pro"
+    });
+    console.log("✅ Seeded Taste N Park approved store successfully!");
+
     mongoose.connection.close();
   } catch (error) {
     console.error("❌ Seeding failed:", error);

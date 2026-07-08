@@ -67,31 +67,47 @@ router.post('/register', async (req, res) => {
   }
 });
 
-// 🔐 LOGIN: Authenticate Store Admin (Maps to: POST http://localhost:5000/api/stores/login)
+// 🔐 LOGIN: Authenticate Store Admin or Staff (Maps to: POST http://localhost:5000/api/stores/login)
 router.post('/login', async (req, res) => {
   try {
-    const { storeSlug, email, password } = req.body;
-    const store = await Store.findOne({ 
-      slug: storeSlug.toLowerCase().trim(), 
-      email: email.toLowerCase().trim() 
-    });
+    const { storeSlug, email, password, loginRole } = req.body;
+    const slug = storeSlug.toLowerCase().trim();
+    const cleanEmail = email.toLowerCase().trim();
+    const roleType = loginRole || "admin";
 
-    if (!store) return res.status(410).json({ message: "Store or account not found." });
+    if (roleType === "admin") {
+      const store = await Store.findOne({ slug, email: cleanEmail });
+      if (!store) return res.status(410).json({ message: "Store or administrator account not found." });
 
-    const isMatch = await bcrypt.compare(password, store.password);
-    if (!isMatch) return res.status(401).json({ message: "Incorrect password. Access denied." });
+      const isMatch = await bcrypt.compare(password, store.password);
+      if (!isMatch) return res.status(401).json({ message: "Incorrect password. Access denied." });
 
-    if (!store.isApproved) {
-      return res.status(403).json({ message: "Access Denied. Your tenant account is pending approval or subscription activation." });
+      if (!store.isApproved) {
+        return res.status(403).json({ message: "Access Denied. Your tenant account is pending approval or subscription activation." });
+      }
+
+      const token = jwt.sign(
+        { storeId: store._id, slug: store.slug, role: 'admin' },
+        process.env.JWT_SECRET || 'MNC_SUPER_SECRET_KEY',
+        { expiresIn: '24h' }
+      );
+      return res.json({ token, role: 'admin', slug: store.slug, name: store.name });
+
+    } else {
+      // Kitchen or Delivery Staff Authentication
+      const Staff = require('../models/Staff');
+      const staffMember = await Staff.findOne({ storeSlug: slug, email: cleanEmail });
+      if (!staffMember) {
+        return res.status(404).json({ message: `Registered staff email not found for this store.` });
+      }
+
+      const token = jwt.sign(
+        { staffId: staffMember._id, slug: slug, role: roleType },
+        process.env.JWT_SECRET || 'MNC_SUPER_SECRET_KEY',
+        { expiresIn: '24h' }
+      );
+      return res.json({ token, role: roleType, slug: slug, name: staffMember.name });
     }
-
-    const token = jwt.sign(
-      { storeId: store._id, slug: store.slug, role: 'admin' },
-      process.env.JWT_SECRET || 'MNC_SUPER_SECRET_KEY',
-      { expiresIn: '24h' }
-    );
-
-    res.json({ token, role: 'admin', slug: store.slug, name: store.name });
   } catch (err) {
     console.error("❌ Login Pipeline Failure:", err);
     res.status(500).json({ message: err.message });
