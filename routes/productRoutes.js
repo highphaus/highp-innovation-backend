@@ -15,13 +15,12 @@ router.get('/:slug', async (req, res) => {
 // Admin Add Inventory
 router.post('/', async (req, res) => {
   try {
-    const { storeSlug, name, price, description, image } = req.body;
+    const { storeSlug } = req.body;
+    if (!storeSlug) return res.status(400).json({ error: "Missing storeSlug parameter." });
+    
     const newProduct = await Product.create({
-      storeSlug: storeSlug.toLowerCase().trim(),
-      name,
-      price,
-      description,
-      image
+      ...req.body,
+      storeSlug: storeSlug.toLowerCase().trim()
     });
     res.status(201).json(newProduct);
   } catch (err) {
@@ -35,6 +34,22 @@ router.delete('/:id', async (req, res) => {
     const deleted = await Product.findByIdAndDelete(req.params.id);
     if (!deleted) return res.status(404).json({ message: "Item not found" });
     res.json({ message: "Product successfully cleared from cluster" });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Admin Update Inventory (e.g. Price, Name)
+router.put('/:id', async (req, res) => {
+  try {
+    const { name, price, description, image } = req.body;
+    const updated = await Product.findByIdAndUpdate(
+      req.params.id,
+      { name, price, description, image },
+      { new: true }
+    );
+    if (!updated) return res.status(404).json({ message: "Product not found" });
+    res.json(updated);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

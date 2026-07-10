@@ -5,8 +5,8 @@ const Order = require('../models/Order');
 // 🛒 CUSTOMER GATEWAY: Submit a new dynamic cart checkout transaction
 router.post('/', async (req, res) => {
   try {
-    const { storeSlug, customerName, items, totalAmount } = req.body;
-    
+    const { storeSlug, customerId, customerName, phone, address, items, totalAmount } = req.body;
+
     // Fail-safe validation checklist
     if (!storeSlug || !customerName || !items || items.length === 0 || !totalAmount) {
       return res.status(400).json({ message: "MNC Validation Failure: Missing mandatory checkout payloads." });
@@ -14,7 +14,10 @@ router.post('/', async (req, res) => {
 
     const order = await Order.create({ 
       storeSlug: storeSlug.toLowerCase().trim(), 
+      customerId: customerId || null,
       customerName, 
+      phone: phone || "",
+      address: address || "",
       items, 
       totalAmount,
       status: 'pending' // Enforces the starting lifecycle tracking state
@@ -54,7 +57,7 @@ router.patch('/:orderId/status', async (req, res) => {
     const { status } = req.body;
     
     // Strict business rule configuration boundaries
-    const validStatuses = ['pending', 'preparing', 'completed', 'cancelled'];
+    const validStatuses = ['pending', 'preparing', 'delivering', 'completed', 'cancelled'];
     if (!validStatuses.includes(status)) {
       return res.status(400).json({ message: `State Error: "${status}" is not a recognized operational phase.` });
     }

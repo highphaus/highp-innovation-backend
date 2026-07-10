@@ -25,7 +25,32 @@ const ProductSchema = new mongoose.Schema({
   image: { 
     type: String,
     required: true // Enforces high-quality visuals for enterprise brands
-  }
+  },
+  productId: { type: String, default: "" },
+  category: { type: String, default: "" },
+  brand: { type: String, default: "" },
+  sku: { type: String, default: "" },
+  unit: { type: String, default: "" },
+  offerPrice: { type: Number, default: 0 },
+  stock: { type: Number, default: 0 },
+  status: { type: String, default: "active" }, // active, inactive
+  featured: { type: Boolean, default: false },
+  tags: { type: [String], default: [] },
+  weight: { type: String, default: "" },
+  packageSize: { type: String, default: "" },
+  flavor: { type: String, default: "" },
+  origin: { type: String, default: "" },
+  dietaryInfo: { type: String, default: "" },
+  variants: [
+    {
+      variantLabel: { type: String, default: "" },
+      unit: { type: String, default: "" },
+      price: { type: Number, default: 0 },
+      offerPrice: { type: Number, default: 0 },
+      stock: { type: Number, default: 0 },
+      sku: { type: String, default: "" }
+    }
+  ]
 }, {
   timestamps: true // Automatically tracks createdAt/updatedAt for inventory auditing
 });
