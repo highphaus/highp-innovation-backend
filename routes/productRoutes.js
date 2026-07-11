@@ -39,13 +39,13 @@ router.delete('/:id', async (req, res) => {
   }
 });
 
-// Admin Update Inventory (e.g. Price, Name)
+// Admin Update Inventory (e.g. Price, Name, Category)
 router.put('/:id', async (req, res) => {
   try {
-    const { name, price, description, image } = req.body;
+    const { name, price, description, image, category } = req.body;
     const updated = await Product.findByIdAndUpdate(
       req.params.id,
-      { name, price, description, image },
+      { name, price, description, image, category },
       { new: true }
     );
     if (!updated) return res.status(404).json({ message: "Product not found" });

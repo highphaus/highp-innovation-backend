@@ -312,7 +312,10 @@ router.put('/:slug', async (req, res) => {
       phone, whatsappNumber, address, location, language, customDomain, isLive, isTestingMode, newOrderAlerts,
       soundAlertsEnabled, vibrationAlertsEnabled,
       bankAccountHolder, bankName, bankAccountNumber, bankIfsc, upiId,
-      codEnabled, deliveryFee, selfPickup
+      codEnabled, deliveryFee, selfPickup,
+      busyModeActive, busyModeDuration, busyModeEndTime, busyModeMessage,
+      checkoutMode,
+      customCategories
     } = req.body;
 
     const updateFields = {};
@@ -343,11 +346,17 @@ router.put('/:slug', async (req, res) => {
     if (codEnabled !== undefined) updateFields.codEnabled = codEnabled;
     if (deliveryFee !== undefined) updateFields.deliveryFee = deliveryFee;
     if (selfPickup !== undefined) updateFields.selfPickup = selfPickup;
+    if (busyModeActive !== undefined) updateFields.busyModeActive = busyModeActive;
+    if (busyModeDuration !== undefined) updateFields.busyModeDuration = busyModeDuration;
+    if (busyModeEndTime !== undefined) updateFields.busyModeEndTime = busyModeEndTime;
+    if (busyModeMessage !== undefined) updateFields.busyModeMessage = busyModeMessage;
+    if (checkoutMode !== undefined) updateFields.checkoutMode = checkoutMode;
+    if (customCategories !== undefined) updateFields.customCategories = customCategories;
 
     const store = await Store.findOneAndUpdate(
       { slug },
-      updateFields,
-      { new: true }
+      { $set: updateFields },
+      { new: true, strict: false }
     ).select('-password');
 
     if (!store) {

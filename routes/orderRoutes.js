@@ -2,10 +2,13 @@ const express = require('express');
 const router = express.Router();
 const Order = require('../models/Order');
 
-// 🛒 CUSTOMER GATEWAY: Submit a new dynamic cart checkout transaction
 router.post('/', async (req, res) => {
   try {
-    const { storeSlug, customerId, customerName, phone, address, items, totalAmount } = req.body;
+    const { 
+      storeSlug, customerId, customerName, phone, address, items, totalAmount,
+      estimatedPrepTime, scheduledDelivery, deliveryInstructions, checkoutType,
+      paymentMethod, paymentStatus, paymentReference
+    } = req.body;
 
     // Fail-safe validation checklist
     if (!storeSlug || !customerName || !items || items.length === 0 || !totalAmount) {
@@ -20,7 +23,14 @@ router.post('/', async (req, res) => {
       address: address || "",
       items, 
       totalAmount,
-      status: 'pending' // Enforces the starting lifecycle tracking state
+      status: 'pending', // Enforces the starting lifecycle tracking state
+      estimatedPrepTime: estimatedPrepTime || 0,
+      scheduledDelivery: scheduledDelivery || null,
+      deliveryInstructions: deliveryInstructions || "",
+      checkoutType: checkoutType || 'website',
+      paymentMethod: paymentMethod || 'cod',
+      paymentStatus: paymentStatus || 'pending',
+      paymentReference: paymentReference || ""
     });
 
     res.status(201).json(order);

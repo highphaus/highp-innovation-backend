@@ -46,7 +46,13 @@ const StoreSchema = new mongoose.Schema({
   upiId: { type: String, default: "" },
   codEnabled: { type: Boolean, default: true },
   deliveryFee: { type: Number, default: 40 },
-  selfPickup: { type: Boolean, default: true }
+  selfPickup: { type: Boolean, default: true },
+  busyModeActive: { type: Boolean, default: false },
+  busyModeDuration: { type: Number, default: 0 },
+  busyModeEndTime: { type: Date },
+  busyModeMessage: { type: String, default: "" },
+  checkoutMode: { type: String, enum: ['website', 'whatsapp'], default: 'website' },
+  customCategories: { type: [String], default: [] }
 }, { timestamps: true });
 
 module.exports = mongoose.model('Store', StoreSchema);

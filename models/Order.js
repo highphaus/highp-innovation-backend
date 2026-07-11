@@ -19,7 +19,14 @@ const OrderSchema = new mongoose.Schema({
     type: String, 
     enum: ['pending', 'preparing', 'completed', 'cancelled'], 
     default: 'pending' 
-  }
+  },
+  estimatedPrepTime: { type: Number, default: 0 },
+  scheduledDelivery: { type: Date },
+  deliveryInstructions: { type: String, default: "" },
+  checkoutType: { type: String, enum: ['website', 'whatsapp'], default: 'website' },
+  paymentMethod: { type: String, enum: ['cod', 'upi'], default: 'cod' },
+  paymentStatus: { type: String, enum: ['pending', 'completed', 'failed'], default: 'pending' },
+  paymentReference: { type: String, default: "" }
 }, { timestamps: true });
 
 module.exports = mongoose.model('Order', OrderSchema);
