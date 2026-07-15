@@ -50,7 +50,20 @@ const ProductSchema = new mongoose.Schema({
       stock: { type: Number, default: 0 },
       sku: { type: String, default: "" }
     }
-  ]
+  ],
+  // Restaurant / F&B specific fields
+  vegNonVeg: { type: String, enum: ["veg", "non-veg", "vegan", "egg"], default: "veg" },
+  prepTime: { type: Number, default: 0 },           // minutes
+  spiceLevel: { type: String, enum: ["none", "mild", "medium", "hot", "extra-hot"], default: "none" },
+  allergens: { type: [String], default: [] },        // e.g. ["Nuts", "Dairy", "Gluten"]
+  addons: [
+    {
+      name: { type: String, default: "" },           // e.g. "Extra Cheese"
+      price: { type: Number, default: 0 }            // e.g. 20
+    }
+  ],
+  availabilitySchedule: { type: String, enum: ["always", "weekdays", "weekends"], default: "always" }
+
 }, {
   timestamps: true // Automatically tracks createdAt/updatedAt for inventory auditing
 });

@@ -52,7 +52,30 @@ const StoreSchema = new mongoose.Schema({
   busyModeEndTime: { type: Date },
   busyModeMessage: { type: String, default: "" },
   checkoutMode: { type: String, enum: ['website', 'whatsapp'], default: 'website' },
-  customCategories: { type: [String], default: [] }
+  customCategories: { type: [String], default: [] },
+  // Restaurant operational fields
+  storeIsOpen: { type: Boolean, default: true },
+  minOrderAmount: { type: Number, default: 0 },
+  freeDeliveryAbove: { type: Number, default: 0 },
+  estimatedDeliveryTime: { type: String, default: "30-45 mins" },
+  businessHours: {
+    type: [{
+      day: { type: String },       // "Monday", "Tuesday", etc.
+      isOpen: { type: Boolean, default: true },
+      openTime: { type: String, default: "09:00" },
+      closeTime: { type: String, default: "22:00" }
+    }],
+    default: [
+      { day: "Monday",    isOpen: true, openTime: "09:00", closeTime: "22:00" },
+      { day: "Tuesday",   isOpen: true, openTime: "09:00", closeTime: "22:00" },
+      { day: "Wednesday", isOpen: true, openTime: "09:00", closeTime: "22:00" },
+      { day: "Thursday",  isOpen: true, openTime: "09:00", closeTime: "22:00" },
+      { day: "Friday",    isOpen: true, openTime: "09:00", closeTime: "22:00" },
+      { day: "Saturday",  isOpen: true, openTime: "10:00", closeTime: "23:00" },
+      { day: "Sunday",    isOpen: true, openTime: "10:00", closeTime: "23:00" }
+    ]
+  }
+
 }, { timestamps: true });
 
 module.exports = mongoose.model('Store', StoreSchema);

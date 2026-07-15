@@ -39,16 +39,20 @@ router.delete('/:id', async (req, res) => {
   }
 });
 
-// Admin Update Inventory (e.g. Price, Name, Category)
+// Admin Update Inventory
 router.put('/:id', async (req, res) => {
   try {
-    const { name, price, description, image, category } = req.body;
-    const updated = await Product.findByIdAndUpdate(
-      req.params.id,
-      { name, price, description, image, category },
-      { new: true }
-    );
-    if (!updated) return res.status(404).json({ message: "Product not found" });
+    const existingProduct = await Product.findById(req.params.id);
+    if (!existingProduct) return res.status(404).json({ message: "Product not found" });
+
+    const updateData = { ...req.body };
+    delete updateData._id;
+    delete updateData.__v;
+    delete updateData.createdAt;
+    delete updateData.updatedAt;
+    updateData.storeSlug = existingProduct.storeSlug;
+
+    const updated = await Product.findByIdAndUpdate(req.params.id, updateData, { new: true, runValidators: true });
     res.json(updated);
   } catch (err) {
     res.status(500).json({ error: err.message });

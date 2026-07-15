@@ -3,6 +3,8 @@ const router = express.Router();
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const Store = require('../models/Store');
+const Staff = require('../models/Staff');
+const Payout = require('../models/Payout');
 const { sendOTP, verifyOTP } = require('../services/otpService');
 
 // ==========================
@@ -192,8 +194,6 @@ router.post('/login', async (req, res) => {
 // ==========================================
 // STAFF MANAGEMENT PORTAL GATEWAY ROUTES
 // ==========================================
-const Staff = require('../models/Staff');
-
 // 1. GET /api/stores/:storeSlug/staff
 router.get('/:storeSlug/staff', async (req, res) => {
   try {
@@ -364,6 +364,47 @@ router.put('/:slug', async (req, res) => {
     }
 
     res.json(store);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ==========================================
+// PAYOUT / WITHDRAWAL ENDPOINTS
+// ==========================================
+
+// GET /api/stores/:storeSlug/payouts
+router.get('/:storeSlug/payouts', async (req, res) => {
+  try {
+    const slug = req.params.storeSlug.toLowerCase().trim();
+    const payouts = await Payout.find({ storeSlug: slug }).sort({ createdAt: -1 });
+    res.json(payouts);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /api/stores/:storeSlug/payouts
+router.post('/:storeSlug/payouts', async (req, res) => {
+  try {
+    const slug = req.params.storeSlug.toLowerCase().trim();
+    const { amount, accountHolder, bankName, accountNumber, ifscCode } = req.body;
+
+    if (!amount || !accountHolder || !bankName || !accountNumber || !ifscCode) {
+      return res.status(400).json({ error: "Missing required banking fields for withdrawal." });
+    }
+
+    const newPayout = await Payout.create({
+      storeSlug: slug,
+      amount,
+      accountHolder,
+      bankName,
+      accountNumber,
+      ifscCode,
+      status: 'Requested'
+    });
+
+    res.status(201).json(newPayout);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
