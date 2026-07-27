@@ -7,6 +7,7 @@ const storeRoutes = require('./routes/storeRoutes');
 const productRoutes = require('./routes/productRoutes');
 const orderRoutes = require('./routes/orderRoutes');
 const customerRoutes = require('./routes/customerRoutes');
+const campaignRoutes = require('./routes/campaignRoutes');
 
 const app = express();
 
@@ -39,6 +40,7 @@ app.use('/api/stores', storeRoutes);
 app.use('/api/products', productRoutes);
 app.use('/api/orders', orderRoutes);
 app.use('/api/customers', customerRoutes);
+app.use('/api/campaigns', campaignRoutes);
 app.use('/api/gsheets', require('./routes/googleSheetsRoutes'));
 
 // 404 Handler

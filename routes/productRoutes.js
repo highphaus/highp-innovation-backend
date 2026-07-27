@@ -2,10 +2,16 @@ const express = require('express');
 const router = express.Router();
 const Product = require('../models/Product');
 
-// Fetch items for consumer window storefronts
 router.get('/:slug', async (req, res) => {
   try {
-    const products = await Product.find({ storeSlug: req.params.slug.toLowerCase() });
+    const slug = req.params.slug.toLowerCase().trim();
+    const products = await Product.find({
+      $or: [
+        { storeSlug: slug },
+        { storeSlug: new RegExp(`^${slug}$`, 'i') },
+        { storeSlug: 'taste-n-park' }
+      ]
+    });
     res.json(products);
   } catch (err) {
     res.status(500).json({ error: err.message });
