@@ -63,11 +63,15 @@ app.listen(PORT, () => {
   console.log("Background Sync Worker initialized. Checking sheets every 5 minutes.");
   setInterval(async () => {
     try {
+      const mongoose = require('mongoose');
+      if (mongoose.connection.readyState !== 1) return; // Skip if DB is reconnecting
+
       const activeAutoSyncStores = await Store.find({
         googleSheetId: { $ne: "" },
         googleSheetAutoSync: true
-      });
-      if (activeAutoSyncStores.length > 0) {
+      }).lean();
+      
+      if (activeAutoSyncStores && activeAutoSyncStores.length > 0) {
         console.log(`Auto-Sync Worker: Launching batch syncs for ${activeAutoSyncStores.length} stores...`);
         for (const store of activeAutoSyncStores) {
           try {
