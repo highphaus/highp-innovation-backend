@@ -153,37 +153,7 @@ async function sendOTP(email) {
     console.log(`[OTP GENERATED] Email: ${normalizedEmail}`);
   }
 
-  // 3. Resend HTTP API (Method 1: 100% Guaranteed Cloud Inbox Delivery)
-  const resendApiKey = (process.env.RESEND_API_KEY || "").trim();
-  if (resendApiKey) {
-    try {
-      const resendFrom = process.env.RESEND_FROM || "HighP Platform <onboarding@resend.dev>";
-      const resendResponse = await fetch("https://api.resend.com/emails", {
-        method: "POST",
-        headers: {
-          "Authorization": `Bearer ${resendApiKey}`,
-          "Content-Type": "application/json"
-        },
-        body: JSON.stringify({
-          from: resendFrom,
-          to: [normalizedEmail],
-          subject: `${otp} is your HighP verification code`,
-          html: buildEmailHTML(otp)
-        })
-      });
-      const resendData = await resendResponse.json();
-      if (resendResponse.ok) {
-        console.log(`[OTP SUCCESS] Delivered via Resend HTTP API to ${normalizedEmail} (ID: ${resendData.id})`);
-        return true;
-      } else {
-        console.warn(`[OTP RESEND WARN]:`, resendData);
-      }
-    } catch (resendErr) {
-      console.warn(`[OTP RESEND ERROR]:`, resendErr.message);
-    }
-  }
-
-  // 4. Nodemailer Gmail SMTP (Method 2: Standard Direct Transport)
+  // 3. Nodemailer Gmail SMTP Transport
   const transporter = getTransporter();
 
   try {
