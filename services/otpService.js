@@ -22,11 +22,12 @@ function ipv4Lookup(hostname, options, callback) {
 
 // ── Single SMTP Transporter (Port 465 SSL) ──────────────────
 function getTransporter() {
-  const user = (process.env.EMAIL_USER || "").trim();
-  const rawPass = (process.env.EMAIL_PASS || "").trim();
+  const user = (process.env.EMAIL_USER || process.env.SMTP_USER || process.env.MAIL_USER || "highphaus@gmail.com").trim();
+  const rawPass = (process.env.EMAIL_PASS || process.env.SMTP_PASS || process.env.MAIL_PASS || "jvdshhpqzhgageqt").trim();
   const pass = rawPass.replace(/\s+/g, ""); // Strip spaces from Gmail App Password
 
   return nodemailer.createTransport({
+    service: "gmail",
     host: "smtp.gmail.com",
     port: 465,
     secure: true, // Port 465 requires secure: true
