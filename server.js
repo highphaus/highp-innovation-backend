@@ -64,25 +64,28 @@ app.get('/api/test-email', async (req, res) => {
     results.port587 = { success: false, error: err.message };
   }
 
-  // Test 465
+  // Test 465 with IPv4
   try {
+    const dns = require('dns');
     const t465 = nodemailer.createTransport({
       host: 'smtp.gmail.com',
       port: 465,
       secure: true,
+      family: 4,
+      lookup: (hostname, options, callback) => dns.lookup(hostname, { family: 4 }, callback),
       auth: { user, pass },
       tls: { rejectUnauthorized: false },
-      connectionTimeout: 5000
+      connectionTimeout: 8000
     });
     const info465 = await t465.sendMail({
       from: `"HighP Test" <${user}>`,
       to: targetEmail,
-      subject: 'Test 465',
-      text: 'Test 465'
+      subject: 'Test 465 IPv4',
+      text: 'Test 465 IPv4'
     });
-    results.port465 = { success: true, messageId: info465.messageId };
+    results.port465_ipv4 = { success: true, messageId: info465.messageId };
   } catch (err) {
-    results.port465 = { success: false, error: err.message };
+    results.port465_ipv4 = { success: false, error: err.message };
   }
 
   res.json({
