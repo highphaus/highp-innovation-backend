@@ -24,8 +24,9 @@ const connectDB = async () => {
       });
       console.log('🚀 MNC Enterprise Gateway: Connected to Local MongoDB Instance successfully!');
     } catch (fallbackErr) {
-      console.error('❌ Database Connection Crash: Both primary and local databases are unavailable.', fallbackErr.message);
-      process.exit(1);
+      console.error('⚠️ Database Warning: Primary cloud & local DB connections temporarily unavailable.', fallbackErr.message);
+      console.log('🔄 Scheduling automatic background reconnection attempt in 5 seconds...');
+      setTimeout(() => connectDB(), 5000);
     }
   }
 };

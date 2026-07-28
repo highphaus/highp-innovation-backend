@@ -43,7 +43,10 @@ router.post('/send-otp', async (req, res) => {
     if (purpose === 'register') {
       const existing = await Customer.findOne({ storeSlug: slug, email: cleanEmail });
       if (existing) {
-        return res.status(400).json({ message: "An account with this email already exists for this store." });
+        return res.status(400).json({ 
+          alreadyRegistered: true, 
+          message: "An account with this email already exists for this store. Switching to Login..." 
+        });
       }
       if (!name || !name.trim()) {
         return res.status(400).json({ message: "Name is required for registration." });
@@ -51,12 +54,15 @@ router.post('/send-otp', async (req, res) => {
     } else {
       const existing = await Customer.findOne({ storeSlug: slug, email: cleanEmail });
       if (!existing) {
-        return res.status(404).json({ message: "No account found with this email for this store. Please register first." });
+        return res.status(404).json({ 
+          notRegistered: true, 
+          message: "No account found with this email for this store. Redirecting to Registration..." 
+        });
       }
     }
 
     await sendOTP(cleanEmail);
-    res.json({ message: "OTP sent successfully. Check your email." });
+    res.json({ success: true, message: "OTP sent successfully. Check your email." });
   } catch (err) {
     console.error("Customer send-otp error:", err);
     res.status(500).json({ message: "Failed to send OTP. Please try again." });
