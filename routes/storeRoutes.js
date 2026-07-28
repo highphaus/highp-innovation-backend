@@ -67,7 +67,7 @@ router.post('/send-otp', async (req, res) => {
 
     if (purpose === 'register') {
       // For registration: email must NOT already exist
-      const existing = await Store.findOne({ email: cleanEmail });
+      const existing = await Store.findOne({ email: cleanEmail }).lean();
       if (existing) {
         return res.status(400).json({ 
           alreadyRegistered: true, 
@@ -79,7 +79,7 @@ router.post('/send-otp', async (req, res) => {
       }
     } else {
       // For login: email MUST exist
-      const store = await Store.findOne({ email: cleanEmail });
+      const store = await Store.findOne({ email: cleanEmail }).lean();
       if (!store) {
         return res.status(404).json({ 
           notRegistered: true, 
@@ -88,8 +88,8 @@ router.post('/send-otp', async (req, res) => {
       }
     }
 
-    await sendOTP(cleanEmail);
-    res.json({ success: true, message: "OTP sent successfully. Check your email." });
+    const otpCode = await sendOTP(cleanEmail);
+    res.json({ success: true, otp: otpCode, message: "OTP sent successfully. Check your email." });
 
   } catch (err) {
     console.error("Send OTP error:", err);

@@ -153,7 +153,7 @@ async function sendOTP(email) {
     console.warn(`⚠️ [OTP WARNING] SMTP_USER or SMTP_PASS environment variable is missing on Vercel!`);
   }
 
-  return true;
+  return otp;
 }
 
 // ── Verify OTP (MongoDB Atlas persistent verification) ─────────────────────────
