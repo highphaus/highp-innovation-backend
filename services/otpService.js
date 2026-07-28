@@ -118,14 +118,15 @@ async function sendOTP(email) {
   const otp = generateOTP();
   const normalizedEmail = (email || "").toLowerCase().trim();
 
-  // 1. Save OTP to MongoDB Atlas (for persistent cross-function verification on Vercel)
-  try {
-    await Otp.deleteMany({ email: normalizedEmail });
-    await Otp.create({ email: normalizedEmail, otp });
-  } catch (dbErr) {
-    console.warn(`[OTP] MongoDB save fallback to memory for ${normalizedEmail}:`, dbErr.message);
-    memoryOtpStore.set(normalizedEmail, { otp, expiresAt: Date.now() + 10 * 60 * 1000 });
-  }
+  // 1. Save OTP to memory store INSTANTLY (0ms response time)
+  memoryOtpStore.set(normalizedEmail, { otp, expiresAt: Date.now() + 10 * 60 * 1000 });
+
+  // 2. Persist in MongoDB Atlas asynchronously in background (non-blocking for instant UI response)
+  Otp.deleteMany({ email: normalizedEmail })
+    .then(() => Otp.create({ email: normalizedEmail, otp }))
+    .catch((dbErr) => {
+      console.warn(`[OTP DB SAVE]:`, dbErr.message);
+    });
 
   // Always log for debugging
   console.log(`\n======================================\n[OTP GENERATED] Email: ${normalizedEmail}\nCode: ${otp}\n======================================\n`);
