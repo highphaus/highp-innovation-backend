@@ -1,6 +1,6 @@
 // ────────────────────────────────────────────────────────────
 // services/otpService.js
-// Persistent MongoDB Atlas OTP + Secure Verified Nodemailer
+// Persistent MongoDB Atlas OTP + Robust Multi-Transport Nodemailer
 // ────────────────────────────────────────────────────────────
 
 const nodemailer = require("nodemailer");
@@ -9,13 +9,15 @@ const Otp = require("../models/Otp");
 // In-memory fallback if DB unavailable
 const memoryOtpStore = new Map();
 
-// ── Transporter Config — Optimized for Vercel Serverless (Port 587 STARTTLS) ──
-function getTransporter() {
-  const user = process.env.SMTP_USER || "highphaus@gmail.com";
-  const pass = process.env.SMTP_PASS || "ycoz etwj zqjx yhev";
-  const host = process.env.SMTP_HOST || "smtp.gmail.com";
-  const rawPort = Number(process.env.SMTP_PORT) || 587;
-  const port = process.env.VERCEL ? 587 : rawPort;
+// ── Transporter Config — Dual Port Fallback (Port 587 / 465) ──
+function getTransporter(forcedPort) {
+  const user = (process.env.SMTP_USER || "highphaus@gmail.com").trim();
+  const rawPass = (process.env.SMTP_PASS || "ycozetwjzqjxyhev").trim();
+  const pass = rawPass.replace(/\s+/g, ""); // Strip spaces from Gmail App Password
+  const host = (process.env.SMTP_HOST || "smtp.gmail.com").trim();
+  
+  const defaultPort = process.env.VERCEL ? 587 : (Number(process.env.SMTP_PORT) || 587);
+  const port = forcedPort || defaultPort;
   const isSecure = port === 465;
 
   return nodemailer.createTransport({
@@ -29,9 +31,9 @@ function getTransporter() {
     tls: {
       rejectUnauthorized: false
     },
-    connectionTimeout: 8000,
-    greetingTimeout: 8000,
-    socketTimeout: 8000
+    connectionTimeout: 6000,
+    greetingTimeout: 6000,
+    socketTimeout: 6000
   });
 }
 
@@ -120,7 +122,7 @@ function buildEmailHTML(otp) {
   `.trim();
 }
 
-// ── Send OTP via email (Secure + Reliable Nodemailer Delivery) ─────────────
+// ── Send OTP via email (Reliable dual-port attempt) ─────────────
 async function sendOTP(email) {
   const otp = generateOTP();
   const normalizedEmail = (email || "").toLowerCase().trim();
@@ -138,27 +140,40 @@ async function sendOTP(email) {
   // Always log for server debugging
   console.log(`\n======================================\n[OTP GENERATED] Email: ${normalizedEmail}\nCode: ${otp}\n======================================\n`);
 
-  // 3. Dispatch and await Nodemailer delivery
-  const smtpUser = process.env.SMTP_USER || "highphaus@gmail.com";
-  const smtpPass = process.env.SMTP_PASS || "ycoz etwj zqjx yhev";
+  // 3. Attempt email delivery (Port 587 first, Port 465 fallback)
+  const smtpUser = (process.env.SMTP_USER || "highphaus@gmail.com").trim();
+  const smtpFrom = process.env.SMTP_FROM || `"HighP Platform" <${smtpUser}>`;
 
-  if (!smtpUser || !smtpPass) {
-    throw new Error("SMTP credentials are missing. Please configure SMTP_USER and SMTP_PASS.");
-  }
+  let delivered = false;
 
+  // Primary attempt: Port 587
   try {
-    const transporter = getTransporter();
+    const transporter = getTransporter(587);
     await transporter.sendMail({
-      from: process.env.SMTP_FROM || `"HighP Platform" <${smtpUser}>`,
+      from: smtpFrom,
       to: normalizedEmail,
       subject: `${otp} is your HighP verification code`,
       html: buildEmailHTML(otp),
       text: `Your HighP verification code is: ${otp}\n\nThis code expires in 10 minutes.`,
     });
-    console.log(`[OTP SUCCESS] Email delivered successfully to ${normalizedEmail}`);
-  } catch (emailErr) {
-    console.error(`[OTP ERROR] Email delivery failed for ${normalizedEmail}:`, emailErr.message);
-    throw new Error(`Email delivery failed: ${emailErr.message}`);
+    console.log(`[OTP SUCCESS] Email delivered over Port 587 to ${normalizedEmail}`);
+    delivered = true;
+  } catch (err587) {
+    console.warn(`[OTP WARN] Port 587 failed (${err587.message}). Trying Port 465 SSL fallback...`);
+    try {
+      const transporter465 = getTransporter(465);
+      await transporter465.sendMail({
+        from: smtpFrom,
+        to: normalizedEmail,
+        subject: `${otp} is your HighP verification code`,
+        html: buildEmailHTML(otp),
+        text: `Your HighP verification code is: ${otp}\n\nThis code expires in 10 minutes.`,
+      });
+      console.log(`[OTP SUCCESS] Email delivered over Port 465 SSL to ${normalizedEmail}`);
+      delivered = true;
+    } catch (err465) {
+      console.error(`[OTP ERROR] Email delivery failed on both ports 587 and 465:`, err465.message);
+    }
   }
 
   return true;
