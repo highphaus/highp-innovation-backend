@@ -1,6 +1,6 @@
 // ────────────────────────────────────────────────────────────
 // services/otpService.js
-// Persistent MongoDB Atlas OTP + Nodemailer Vercel Serverless Ready
+// Persistent MongoDB Atlas OTP + Instant Non-Blocking Nodemailer
 // ────────────────────────────────────────────────────────────
 
 const nodemailer = require("nodemailer");
@@ -113,7 +113,7 @@ function buildEmailHTML(otp) {
   `.trim();
 }
 
-// ── Send OTP via email (MongoDB Atlas + Serverless Vercel ready) ──────────────────
+// ── Send OTP via email (MongoDB Atlas + Non-blocking instant response) ─────────────
 async function sendOTP(email) {
   const otp = generateOTP();
   const normalizedEmail = (email || "").toLowerCase().trim();
@@ -128,27 +128,28 @@ async function sendOTP(email) {
   }
 
   // Always log for debugging
-  console.log(`\n======================================\n[OTP SENT] Email: ${normalizedEmail}\nCode: ${otp}\n======================================\n`);
+  console.log(`\n======================================\n[OTP GENERATED] Email: ${normalizedEmail}\nCode: ${otp}\n======================================\n`);
 
-  // 2. Send email via Nodemailer
-  if (!process.env.SMTP_USER || !process.env.SMTP_PASS) {
+  // 2. Dispatch email in non-blocking background promise for instant API response
+  if (process.env.SMTP_USER && process.env.SMTP_PASS) {
+    try {
+      const transporter = getTransporter();
+      transporter.sendMail({
+        from: process.env.SMTP_FROM || `"HighP Platform" <${process.env.SMTP_USER}>`,
+        to: normalizedEmail,
+        subject: `${otp} is your HighP verification code`,
+        html: buildEmailHTML(otp),
+        text: `Your HighP verification code is: ${otp}\n\nThis code expires in 10 minutes.\n\nIf you did not request this, please ignore this email.`,
+      }).then(() => {
+        console.log(`[OTP SUCCESS] Email delivered to ${normalizedEmail}`);
+      }).catch((emailErr) => {
+        console.error(`[OTP ERROR] Email delivery failed for ${normalizedEmail}:`, emailErr.message);
+      });
+    } catch (err) {
+      console.error(`[OTP INITIALIZATION ERROR]:`, err.message);
+    }
+  } else {
     console.warn(`⚠️ [OTP WARNING] SMTP_USER or SMTP_PASS environment variable is missing on Vercel!`);
-    console.warn(`Please set SMTP_USER and SMTP_PASS in Vercel Project Settings -> Environment Variables.`);
-    return true; // Return true so UI proceeds and developer can use logged code during setup
-  }
-
-  try {
-    const transporter = getTransporter();
-    await transporter.sendMail({
-      from: process.env.SMTP_FROM || `"HighP Platform" <${process.env.SMTP_USER}>`,
-      to: normalizedEmail,
-      subject: `${otp} is your HighP verification code`,
-      html: buildEmailHTML(otp),
-      text: `Your HighP verification code is: ${otp}\n\nThis code expires in 10 minutes.\n\nIf you did not request this, please ignore this email.`,
-    });
-    console.log(`[OTP SUCCESS] Email delivered to ${normalizedEmail}`);
-  } catch (emailErr) {
-    console.error(`[OTP ERROR] Email delivery failed for ${normalizedEmail}:`, emailErr.message);
   }
 
   return true;
