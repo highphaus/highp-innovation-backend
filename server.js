@@ -35,13 +35,24 @@ app.get('/health', (req, res) => {
   });
 });
 
-// API Routes
+// API Routes (Support both /api/ prefix and direct / prefix)
 app.use('/api/stores', storeRoutes);
+app.use('/stores', storeRoutes);
+
 app.use('/api/products', productRoutes);
+app.use('/products', productRoutes);
+
 app.use('/api/orders', orderRoutes);
+app.use('/orders', orderRoutes);
+
 app.use('/api/customers', customerRoutes);
+app.use('/customers', customerRoutes);
+
 app.use('/api/campaigns', campaignRoutes);
+app.use('/campaigns', campaignRoutes);
+
 app.use('/api/gsheets', require('./routes/googleSheetsRoutes'));
+app.use('/gsheets', require('./routes/googleSheetsRoutes'));
 
 // 404 Handler
 app.use((req, res, next) => {
