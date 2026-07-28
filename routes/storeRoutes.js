@@ -88,8 +88,8 @@ router.post('/send-otp', async (req, res) => {
       }
     }
 
-    const otpCode = await sendOTP(cleanEmail);
-    res.json({ success: true, otp: otpCode, message: "OTP sent successfully. Check your email." });
+    await sendOTP(cleanEmail);
+    res.json({ success: true, message: "OTP sent successfully. Check your email." });
 
   } catch (err) {
     console.error("Send OTP error:", err);

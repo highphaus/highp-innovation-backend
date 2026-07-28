@@ -61,8 +61,8 @@ router.post('/send-otp', async (req, res) => {
       }
     }
 
-    const otpCode = await sendOTP(cleanEmail);
-    res.json({ success: true, otp: otpCode, message: "OTP sent successfully. Check your email." });
+    await sendOTP(cleanEmail);
+    res.json({ success: true, message: "OTP sent successfully. Check your email." });
   } catch (err) {
     console.error("Customer send-otp error:", err);
     res.status(500).json({ message: "Failed to send OTP. Please try again." });

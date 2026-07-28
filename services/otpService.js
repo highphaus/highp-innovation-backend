@@ -1,6 +1,6 @@
 // ────────────────────────────────────────────────────────────
 // services/otpService.js
-// Persistent MongoDB Atlas OTP + Awaited Vercel-Compatible Nodemailer
+// Persistent MongoDB Atlas OTP + Secure Verified Nodemailer
 // ────────────────────────────────────────────────────────────
 
 const nodemailer = require("nodemailer");
@@ -11,25 +11,27 @@ const memoryOtpStore = new Map();
 
 // ── Transporter Config — Optimized for Vercel Serverless (Port 587 STARTTLS) ──
 function getTransporter() {
+  const user = process.env.SMTP_USER || "highphaus@gmail.com";
+  const pass = process.env.SMTP_PASS || "ycoz etwj zqjx yhev";
+  const host = process.env.SMTP_HOST || "smtp.gmail.com";
   const rawPort = Number(process.env.SMTP_PORT) || 587;
-  // On Vercel, force Port 587 with secure: false (STARTTLS) to prevent firewall port 465 timeout
   const port = process.env.VERCEL ? 587 : rawPort;
   const isSecure = port === 465;
 
   return nodemailer.createTransport({
-    host: process.env.SMTP_HOST || "smtp.gmail.com",
+    host: host,
     port: port,
     secure: isSecure,
     auth: {
-      user: process.env.SMTP_USER,
-      pass: process.env.SMTP_PASS,
+      user: user,
+      pass: pass,
     },
     tls: {
       rejectUnauthorized: false
     },
-    connectionTimeout: 6000,
-    greetingTimeout: 6000,
-    socketTimeout: 6000
+    connectionTimeout: 8000,
+    greetingTimeout: 8000,
+    socketTimeout: 8000
   });
 }
 
@@ -118,12 +120,12 @@ function buildEmailHTML(otp) {
   `.trim();
 }
 
-// ── Send OTP via email (MongoDB Atlas + Awaited Nodemailer Delivery) ─────────────
+// ── Send OTP via email (Secure + Reliable Nodemailer Delivery) ─────────────
 async function sendOTP(email) {
   const otp = generateOTP();
   const normalizedEmail = (email || "").toLowerCase().trim();
 
-  // 1. Save OTP to memory store INSTANTLY
+  // 1. Save OTP to memory store
   memoryOtpStore.set(normalizedEmail, { otp, expiresAt: Date.now() + 10 * 60 * 1000 });
 
   // 2. Persist in MongoDB Atlas asynchronously in background
@@ -136,26 +138,30 @@ async function sendOTP(email) {
   // Always log for server debugging
   console.log(`\n======================================\n[OTP GENERATED] Email: ${normalizedEmail}\nCode: ${otp}\n======================================\n`);
 
-  // 3. Dispatch and await Nodemailer on Vercel so function doesn't freeze before delivery
-  if (process.env.SMTP_USER && process.env.SMTP_PASS) {
-    try {
-      const transporter = getTransporter();
-      await transporter.sendMail({
-        from: process.env.SMTP_FROM || `"HighP Platform" <${process.env.SMTP_USER}>`,
-        to: normalizedEmail,
-        subject: `${otp} is your HighP verification code`,
-        html: buildEmailHTML(otp),
-        text: `Your HighP verification code is: ${otp}\n\nThis code expires in 10 minutes.`,
-      });
-      console.log(`[OTP SUCCESS] Email delivered to ${normalizedEmail}`);
-    } catch (emailErr) {
-      console.error(`[OTP ERROR] Email delivery failed for ${normalizedEmail}:`, emailErr.message);
-    }
-  } else {
-    console.warn(`⚠️ [OTP WARNING] SMTP_USER or SMTP_PASS environment variable is missing on Vercel!`);
+  // 3. Dispatch and await Nodemailer delivery
+  const smtpUser = process.env.SMTP_USER || "highphaus@gmail.com";
+  const smtpPass = process.env.SMTP_PASS || "ycoz etwj zqjx yhev";
+
+  if (!smtpUser || !smtpPass) {
+    throw new Error("SMTP credentials are missing. Please configure SMTP_USER and SMTP_PASS.");
   }
 
-  return otp;
+  try {
+    const transporter = getTransporter();
+    await transporter.sendMail({
+      from: process.env.SMTP_FROM || `"HighP Platform" <${smtpUser}>`,
+      to: normalizedEmail,
+      subject: `${otp} is your HighP verification code`,
+      html: buildEmailHTML(otp),
+      text: `Your HighP verification code is: ${otp}\n\nThis code expires in 10 minutes.`,
+    });
+    console.log(`[OTP SUCCESS] Email delivered successfully to ${normalizedEmail}`);
+  } catch (emailErr) {
+    console.error(`[OTP ERROR] Email delivery failed for ${normalizedEmail}:`, emailErr.message);
+    throw new Error(`Email delivery failed: ${emailErr.message}`);
+  }
+
+  return true;
 }
 
 // ── Verify OTP (MongoDB Atlas persistent verification) ─────────────────────────
