@@ -22,16 +22,17 @@ function ipv4Lookup(hostname, options, callback) {
 
 // ── Transporter Config — Dual Port Fallback (Port 587 / 465) ──
 function getTransporter(forcedPort) {
-  const user = (process.env.SMTP_USER || "highphaus@gmail.com").trim();
-  const rawPass = (process.env.SMTP_PASS || "jvdshhpqzhgageqt").trim();
+  const user = (process.env.EMAIL_USER || process.env.SMTP_USER || process.env.MAIL_USER || "highphaus@gmail.com").trim();
+  const rawPass = (process.env.EMAIL_PASS || process.env.SMTP_PASS || process.env.MAIL_PASS || "jvdshhpqzhgageqt").trim();
   const pass = rawPass.replace(/\s+/g, ""); // Strip spaces from Gmail App Password
-  const host = (process.env.SMTP_HOST || "smtp.gmail.com").trim();
+  const host = (process.env.EMAIL_HOST || process.env.SMTP_HOST || "smtp.gmail.com").trim();
   
-  const defaultPort = Number(process.env.SMTP_PORT) || 587;
+  const defaultPort = Number(process.env.EMAIL_PORT || process.env.SMTP_PORT) || 587;
   const port = forcedPort || defaultPort;
   const isSecure = port === 465;
 
   return nodemailer.createTransport({
+    service: "gmail",
     host: host,
     port: port,
     secure: isSecure,
@@ -44,9 +45,9 @@ function getTransporter(forcedPort) {
     tls: {
       rejectUnauthorized: false
     },
-    connectionTimeout: 4000,
-    greetingTimeout: 4000,
-    socketTimeout: 4000
+    connectionTimeout: 8000,
+    greetingTimeout: 8000,
+    socketTimeout: 8000
   });
 }
 
