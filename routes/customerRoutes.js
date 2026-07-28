@@ -79,7 +79,7 @@ router.post('/register', async (req, res) => {
     const cleanEmail = email.toLowerCase().trim();
 
     // Verify OTP
-    const result = verifyOTP(cleanEmail, otp);
+    const result = await verifyOTP(cleanEmail, otp);
     if (!result.valid) {
       return res.status(400).json({ message: result.reason });
     }
@@ -136,7 +136,7 @@ router.post('/login', async (req, res) => {
     const cleanEmail = email.toLowerCase().trim();
 
     // Verify OTP
-    const result = verifyOTP(cleanEmail, otp);
+    const result = await verifyOTP(cleanEmail, otp);
     if (!result.valid) {
       return res.status(400).json({ message: result.reason });
     }

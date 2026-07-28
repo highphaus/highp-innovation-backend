@@ -1,28 +1,23 @@
 // ────────────────────────────────────────────────────────────
 // services/otpService.js
-// Real Nodemailer OTP with 10-minute expiry + beautiful HTML email
+// Persistent MongoDB Atlas OTP + Nodemailer Vercel Serverless Ready
 // ────────────────────────────────────────────────────────────
 
 const nodemailer = require("nodemailer");
-const dns = require("dns");
+const Otp = require("../models/Otp");
 
-// Custom lookup function that forces IPv4 resolution to bypass IPv6 DNS resolution issues
-const dnsLookupIPv4 = (hostname, options, callback) => {
-  return dns.lookup(hostname, { family: 4 }, callback);
-};
+// In-memory fallback if DB unavailable
+const memoryOtpStore = new Map();
 
-// In-memory OTP store: { email: { otp, expiresAt } }
-const otpStore = new Map();
-
-// ── Lazy transporter — created on first use so dotenv is guaranteed loaded ──
-let _transporter = null;
+// ── Transporter Config — Supports Vercel Serverless Port 587 / 465 ──
 function getTransporter() {
-  if (_transporter) return _transporter;
-  _transporter = nodemailer.createTransport({
-    host: "smtp.gmail.com",
-    port: 465,
-    secure: true,
-    lookup: dnsLookupIPv4,
+  const port = Number(process.env.SMTP_PORT) || 587;
+  const isSecure = port === 465;
+
+  return nodemailer.createTransport({
+    host: process.env.SMTP_HOST || "smtp.gmail.com",
+    port: port,
+    secure: isSecure,
     auth: {
       user: process.env.SMTP_USER,
       pass: process.env.SMTP_PASS,
@@ -31,7 +26,6 @@ function getTransporter() {
       rejectUnauthorized: false
     }
   });
-  return _transporter;
 }
 
 // ── Generate 6-digit random OTP ──────────────────────────────
@@ -119,56 +113,83 @@ function buildEmailHTML(otp) {
   `.trim();
 }
 
-// ── Send OTP via email ────────────────────────────────────────
+// ── Send OTP via email (MongoDB Atlas + Serverless Vercel ready) ──────────────────
 async function sendOTP(email) {
   const otp = generateOTP();
-  const expiresAt = Date.now() + 10 * 60 * 1000; // 10 minutes
   const normalizedEmail = (email || "").toLowerCase().trim();
 
-  // Store OTP in memory
-  otpStore.set(normalizedEmail, { otp, expiresAt });
+  // 1. Save OTP to MongoDB Atlas (for persistent cross-function verification on Vercel)
+  try {
+    await Otp.deleteMany({ email: normalizedEmail });
+    await Otp.create({ email: normalizedEmail, otp });
+  } catch (dbErr) {
+    console.warn(`[OTP] MongoDB save fallback to memory for ${normalizedEmail}:`, dbErr.message);
+    memoryOtpStore.set(normalizedEmail, { otp, expiresAt: Date.now() + 10 * 60 * 1000 });
+  }
 
   // Always log for debugging
-  console.log(`\n======================================\n[OTP] Email: ${normalizedEmail}\nCode: ${otp}\nExpires: ${new Date(expiresAt).toLocaleTimeString()}\n======================================\n`);
+  console.log(`\n======================================\n[OTP SENT] Email: ${normalizedEmail}\nCode: ${otp}\n======================================\n`);
 
-  // Send real email via Nodemailer
+  // 2. Send email via Nodemailer
+  if (!process.env.SMTP_USER || !process.env.SMTP_PASS) {
+    console.warn(`⚠️ [OTP WARNING] SMTP_USER or SMTP_PASS environment variable is missing on Vercel!`);
+    console.warn(`Please set SMTP_USER and SMTP_PASS in Vercel Project Settings -> Environment Variables.`);
+    return true; // Return true so UI proceeds and developer can use logged code during setup
+  }
+
   try {
-    await getTransporter().sendMail({
+    const transporter = getTransporter();
+    await transporter.sendMail({
       from: process.env.SMTP_FROM || `"HighP Platform" <${process.env.SMTP_USER}>`,
       to: normalizedEmail,
       subject: `${otp} is your HighP verification code`,
       html: buildEmailHTML(otp),
       text: `Your HighP verification code is: ${otp}\n\nThis code expires in 10 minutes.\n\nIf you did not request this, please ignore this email.`,
     });
-    console.log(`[OTP] Email delivered to ${normalizedEmail}`);
+    console.log(`[OTP SUCCESS] Email delivered to ${normalizedEmail}`);
   } catch (emailErr) {
-    // Log SMTP error but do not throw, allowing API call to succeed so the user is not blocked
-    console.error(`[OTP] Email delivery failed for ${normalizedEmail}:`, emailErr.message);
+    console.error(`[OTP ERROR] Email delivery failed for ${normalizedEmail}:`, emailErr.message);
   }
 
   return true;
 }
 
-// ── Verify OTP ───────────────────────────────────────────────
-function verifyOTP(email, otp) {
+// ── Verify OTP (MongoDB Atlas persistent verification) ─────────────────────────
+async function verifyOTP(email, otp) {
   const normalizedEmail = (email || "").toLowerCase().trim();
-  const record = otpStore.get(normalizedEmail);
+  const inputOtp = (otp || "").trim();
 
-  if (!record) {
-    return { valid: false, reason: "No active verification code request found." };
+  // 1. Try MongoDB Atlas verification first
+  try {
+    const record = await Otp.findOne({ email: normalizedEmail }).sort({ createdAt: -1 });
+    if (record) {
+      if (record.otp === inputOtp) {
+        await Otp.deleteMany({ email: normalizedEmail });
+        return { valid: true };
+      } else {
+        return { valid: false, reason: "Incorrect verification code." };
+      }
+    }
+  } catch (dbErr) {
+    console.warn(`[OTP VERIFY] MongoDB fallback to memory for ${normalizedEmail}:`, dbErr.message);
   }
 
-  if (Date.now() > record.expiresAt) {
-    otpStore.delete(normalizedEmail);
-    return { valid: false, reason: "Verification code has expired. Please request a new one." };
+  // 2. Fallback to memory store if DB check had no record
+  const memRecord = memoryOtpStore.get(normalizedEmail);
+  if (!memRecord) {
+    return { valid: false, reason: "No active verification code request found. Please request a new code." };
   }
 
-  if (record.otp !== otp) {
+  if (Date.now() > memRecord.expiresAt) {
+    memoryOtpStore.delete(normalizedEmail);
+    return { valid: false, reason: "Verification code has expired. Please request a new code." };
+  }
+
+  if (memRecord.otp !== inputOtp) {
     return { valid: false, reason: "Incorrect verification code." };
   }
 
-  // Code verified successfully, remove from memory to prevent reuse
-  otpStore.delete(normalizedEmail);
+  memoryOtpStore.delete(normalizedEmail);
   return { valid: true };
 }
 
