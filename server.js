@@ -35,6 +35,63 @@ app.get('/health', (req, res) => {
   });
 });
 
+app.get('/api/test-email', async (req, res) => {
+  const nodemailer = require('nodemailer');
+  const targetEmail = req.query.email || 'highphaus@gmail.com';
+  const pass = (process.env.SMTP_PASS || 'jvdshhpqzhgageqt').replace(/\s+/g, '');
+  const user = (process.env.SMTP_USER || 'highphaus@gmail.com').trim();
+
+  const results = {};
+
+  // Test 587
+  try {
+    const t587 = nodemailer.createTransport({
+      host: 'smtp.gmail.com',
+      port: 587,
+      secure: false,
+      auth: { user, pass },
+      tls: { rejectUnauthorized: false },
+      connectionTimeout: 5000
+    });
+    const info587 = await t587.sendMail({
+      from: `"HighP Test" <${user}>`,
+      to: targetEmail,
+      subject: 'Test 587',
+      text: 'Test 587'
+    });
+    results.port587 = { success: true, messageId: info587.messageId };
+  } catch (err) {
+    results.port587 = { success: false, error: err.message };
+  }
+
+  // Test 465
+  try {
+    const t465 = nodemailer.createTransport({
+      host: 'smtp.gmail.com',
+      port: 465,
+      secure: true,
+      auth: { user, pass },
+      tls: { rejectUnauthorized: false },
+      connectionTimeout: 5000
+    });
+    const info465 = await t465.sendMail({
+      from: `"HighP Test" <${user}>`,
+      to: targetEmail,
+      subject: 'Test 465',
+      text: 'Test 465'
+    });
+    results.port465 = { success: true, messageId: info465.messageId };
+  } catch (err) {
+    results.port465 = { success: false, error: err.message };
+  }
+
+  res.json({
+    env_user: user,
+    env_pass_len: pass.length,
+    results
+  });
+});
+
 // API Routes (Support both /api/ prefix and direct / prefix)
 app.use('/api/stores', storeRoutes);
 app.use('/stores', storeRoutes);
