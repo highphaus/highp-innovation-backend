@@ -83,7 +83,7 @@ app.listen(PORT, () => {
         }
       }
     } catch (err) {
-      console.error("Auto-Sync Worker Critical Failure:", err);
+      console.warn("Auto-Sync Worker Notice:", err.message || err);
     }
   }, 5 * 60 * 1000);
 });

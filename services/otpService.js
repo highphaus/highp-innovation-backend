@@ -4,7 +4,13 @@
 // ────────────────────────────────────────────────────────────
 
 const nodemailer = require("nodemailer");
+const dns = require("dns");
 const Otp = require("../models/Otp");
+
+// Force IPv4 first to prevent ENETUNREACH errors on cloud hosts like Render
+if (dns.setDefaultResultOrder) {
+  dns.setDefaultResultOrder("ipv4first");
+}
 
 // In-memory fallback if DB unavailable
 const memoryOtpStore = new Map();
@@ -24,6 +30,7 @@ function getTransporter(forcedPort) {
     host: host,
     port: port,
     secure: isSecure,
+    family: 4, // Force IPv4 socket connection
     auth: {
       user: user,
       pass: pass,
@@ -31,9 +38,9 @@ function getTransporter(forcedPort) {
     tls: {
       rejectUnauthorized: false
     },
-    connectionTimeout: 6000,
-    greetingTimeout: 6000,
-    socketTimeout: 6000
+    connectionTimeout: 8000,
+    greetingTimeout: 8000,
+    socketTimeout: 8000
   });
 }
 
