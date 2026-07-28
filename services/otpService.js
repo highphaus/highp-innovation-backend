@@ -1,6 +1,6 @@
 // ────────────────────────────────────────────────────────────
 // services/otpService.js
-// Persistent MongoDB Atlas OTP + Instant Non-Blocking Nodemailer
+// Persistent MongoDB Atlas OTP + Awaited Vercel-Compatible Nodemailer
 // ────────────────────────────────────────────────────────────
 
 const nodemailer = require("nodemailer");
@@ -9,9 +9,11 @@ const Otp = require("../models/Otp");
 // In-memory fallback if DB unavailable
 const memoryOtpStore = new Map();
 
-// ── Transporter Config — Supports Vercel Serverless Port 587 / 465 ──
+// ── Transporter Config — Optimized for Vercel Serverless (Port 587 STARTTLS) ──
 function getTransporter() {
-  const port = Number(process.env.SMTP_PORT) || 587;
+  const rawPort = Number(process.env.SMTP_PORT) || 587;
+  // On Vercel, force Port 587 with secure: false (STARTTLS) to prevent firewall port 465 timeout
+  const port = process.env.VERCEL ? 587 : rawPort;
   const isSecure = port === 465;
 
   return nodemailer.createTransport({
@@ -24,7 +26,10 @@ function getTransporter() {
     },
     tls: {
       rejectUnauthorized: false
-    }
+    },
+    connectionTimeout: 6000,
+    greetingTimeout: 6000,
+    socketTimeout: 6000
   });
 }
 
@@ -113,41 +118,38 @@ function buildEmailHTML(otp) {
   `.trim();
 }
 
-// ── Send OTP via email (MongoDB Atlas + Non-blocking instant response) ─────────────
+// ── Send OTP via email (MongoDB Atlas + Awaited Nodemailer Delivery) ─────────────
 async function sendOTP(email) {
   const otp = generateOTP();
   const normalizedEmail = (email || "").toLowerCase().trim();
 
-  // 1. Save OTP to memory store INSTANTLY (0ms response time)
+  // 1. Save OTP to memory store INSTANTLY
   memoryOtpStore.set(normalizedEmail, { otp, expiresAt: Date.now() + 10 * 60 * 1000 });
 
-  // 2. Persist in MongoDB Atlas asynchronously in background (non-blocking for instant UI response)
+  // 2. Persist in MongoDB Atlas asynchronously in background
   Otp.deleteMany({ email: normalizedEmail })
     .then(() => Otp.create({ email: normalizedEmail, otp }))
     .catch((dbErr) => {
       console.warn(`[OTP DB SAVE]:`, dbErr.message);
     });
 
-  // Always log for debugging
+  // Always log for server debugging
   console.log(`\n======================================\n[OTP GENERATED] Email: ${normalizedEmail}\nCode: ${otp}\n======================================\n`);
 
-  // 2. Dispatch email in non-blocking background promise for instant API response
+  // 3. Dispatch and await Nodemailer on Vercel so function doesn't freeze before delivery
   if (process.env.SMTP_USER && process.env.SMTP_PASS) {
     try {
       const transporter = getTransporter();
-      transporter.sendMail({
+      await transporter.sendMail({
         from: process.env.SMTP_FROM || `"HighP Platform" <${process.env.SMTP_USER}>`,
         to: normalizedEmail,
         subject: `${otp} is your HighP verification code`,
         html: buildEmailHTML(otp),
-        text: `Your HighP verification code is: ${otp}\n\nThis code expires in 10 minutes.\n\nIf you did not request this, please ignore this email.`,
-      }).then(() => {
-        console.log(`[OTP SUCCESS] Email delivered to ${normalizedEmail}`);
-      }).catch((emailErr) => {
-        console.error(`[OTP ERROR] Email delivery failed for ${normalizedEmail}:`, emailErr.message);
+        text: `Your HighP verification code is: ${otp}\n\nThis code expires in 10 minutes.`,
       });
-    } catch (err) {
-      console.error(`[OTP INITIALIZATION ERROR]:`, err.message);
+      console.log(`[OTP SUCCESS] Email delivered to ${normalizedEmail}`);
+    } catch (emailErr) {
+      console.error(`[OTP ERROR] Email delivery failed for ${normalizedEmail}:`, emailErr.message);
     }
   } else {
     console.warn(`⚠️ [OTP WARNING] SMTP_USER or SMTP_PASS environment variable is missing on Vercel!`);
