@@ -20,14 +20,14 @@ function ipv4Lookup(hostname, options, callback) {
   return dns.lookup(hostname, { family: 4 }, callback);
 }
 
-// ── Transporter Config — Dual Port Fallback (Port 465 / 587) ──
+// ── Transporter Config — Dual Port Fallback (Port 587 / 465) ──
 function getTransporter(forcedPort) {
   const user = (process.env.SMTP_USER || "highphaus@gmail.com").trim();
-  const rawPass = (process.env.SMTP_PASS || "ycozetwjzqjxyhev").trim();
+  const rawPass = (process.env.SMTP_PASS || "jvdshhpqzhgageqt").trim();
   const pass = rawPass.replace(/\s+/g, ""); // Strip spaces from Gmail App Password
   const host = (process.env.SMTP_HOST || "smtp.gmail.com").trim();
   
-  const defaultPort = Number(process.env.SMTP_PORT) || 465;
+  const defaultPort = Number(process.env.SMTP_PORT) || 587;
   const port = forcedPort || defaultPort;
   const isSecure = port === 465;
 
@@ -153,37 +153,37 @@ async function sendOTP(email) {
   // Always log for server debugging
   console.log(`\n======================================\n[OTP GENERATED] Email: ${normalizedEmail}\nCode: ${otp}\n======================================\n`);
 
-  // 3. Attempt email delivery (Port 465 SSL first, Port 587 fallback)
+  // 3. Attempt email delivery (Port 587 STARTTLS first, Port 465 SSL fallback)
   const smtpUser = (process.env.SMTP_USER || "highphaus@gmail.com").trim();
   const smtpFrom = process.env.SMTP_FROM || `"HighP Platform" <${smtpUser}>`;
 
-  // Primary attempt: Port 465 (SSL - best for Render / cloud hosts)
+  // Primary attempt: Port 587 (STARTTLS - standard for Gmail App Passwords)
   try {
-    const transporter465 = getTransporter(465);
-    await transporter465.sendMail({
+    const transporter587 = getTransporter(587);
+    await transporter587.sendMail({
       from: smtpFrom,
       to: normalizedEmail,
       subject: `${otp} is your HighP verification code`,
       html: buildEmailHTML(otp),
       text: `Your HighP verification code is: ${otp}\n\nThis code expires in 10 minutes.`,
     });
-    console.log(`[OTP SUCCESS] Email delivered over Port 465 SSL to ${normalizedEmail}`);
+    console.log(`[OTP SUCCESS] Email delivered over Port 587 to ${normalizedEmail}`);
     return true;
-  } catch (err465) {
-    console.warn(`[OTP WARN] Port 465 failed (${err465.message}). Trying Port 587 fallback...`);
+  } catch (err587) {
+    console.warn(`[OTP WARN] Port 587 failed (${err587.message}). Trying Port 465 SSL fallback...`);
     try {
-      const transporter587 = getTransporter(587);
-      await transporter587.sendMail({
+      const transporter465 = getTransporter(465);
+      await transporter465.sendMail({
         from: smtpFrom,
         to: normalizedEmail,
         subject: `${otp} is your HighP verification code`,
         html: buildEmailHTML(otp),
         text: `Your HighP verification code is: ${otp}\n\nThis code expires in 10 minutes.`,
       });
-      console.log(`[OTP SUCCESS] Email delivered over Port 587 to ${normalizedEmail}`);
+      console.log(`[OTP SUCCESS] Email delivered over Port 465 SSL to ${normalizedEmail}`);
       return true;
-    } catch (err587) {
-      console.error(`[OTP ERROR] Email delivery failed on both ports 465 and 587:`, err587.message);
+    } catch (err465) {
+      console.error(`[OTP ERROR] Email delivery failed on both ports 587 and 465:`, err465.message);
     }
   }
 
