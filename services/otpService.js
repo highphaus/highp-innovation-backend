@@ -1,6 +1,6 @@
 // ────────────────────────────────────────────────────────────
 // services/otpService.js
-// Persistent MongoDB Atlas OTP + Robust Multi-Transport Nodemailer
+// Production-Ready OTP Service with Single Verified Gmail SMTP Transporter
 // ────────────────────────────────────────────────────────────
 
 const nodemailer = require("nodemailer");
@@ -20,24 +20,18 @@ function ipv4Lookup(hostname, options, callback) {
   return dns.lookup(hostname, { family: 4 }, callback);
 }
 
-// ── Transporter Config — Dual Port Fallback (Port 587 / 465) ──
-function getTransporter(forcedPort) {
-  const user = (process.env.EMAIL_USER || process.env.SMTP_USER || process.env.MAIL_USER || "highphaus@gmail.com").trim();
-  const rawPass = (process.env.EMAIL_PASS || process.env.SMTP_PASS || process.env.MAIL_PASS || "jvdshhpqzhgageqt").trim();
+// ── Single SMTP Transporter (Port 465 SSL) ──────────────────
+function getTransporter() {
+  const user = (process.env.EMAIL_USER || "").trim();
+  const rawPass = (process.env.EMAIL_PASS || "").trim();
   const pass = rawPass.replace(/\s+/g, ""); // Strip spaces from Gmail App Password
-  const host = (process.env.EMAIL_HOST || process.env.SMTP_HOST || "smtp.gmail.com").trim();
-  
-  const defaultPort = Number(process.env.EMAIL_PORT || process.env.SMTP_PORT) || 587;
-  const port = forcedPort || defaultPort;
-  const isSecure = port === 465;
 
   return nodemailer.createTransport({
-    service: "gmail",
-    host: host,
-    port: port,
-    secure: isSecure,
+    host: "smtp.gmail.com",
+    port: 465,
+    secure: true, // Port 465 requires secure: true
     family: 4, // Force IPv4 socket connection
-    lookup: ipv4Lookup, // Custom DNS lookup forcing IPv4
+    lookup: ipv4Lookup,
     auth: {
       user: user,
       pass: pass,
@@ -45,9 +39,9 @@ function getTransporter(forcedPort) {
     tls: {
       rejectUnauthorized: false
     },
-    connectionTimeout: 8000,
-    greetingTimeout: 8000,
-    socketTimeout: 8000
+    connectionTimeout: 10000,
+    greetingTimeout: 10000,
+    socketTimeout: 10000
   });
 }
 
@@ -136,7 +130,7 @@ function buildEmailHTML(otp) {
   `.trim();
 }
 
-// ── Send OTP via email (Fast Parallel Dual-Port Race) ─────────────
+// ── Send OTP via email ───────────────────────────────────────
 async function sendOTP(email) {
   const otp = generateOTP();
   const normalizedEmail = (email || "").toLowerCase().trim();
@@ -151,67 +145,66 @@ async function sendOTP(email) {
       console.warn(`[OTP DB SAVE]:`, dbErr.message);
     });
 
-  // Always log for server debugging
-  console.log(`\n======================================\n[OTP GENERATED] Email: ${normalizedEmail}\nCode: ${otp}\n======================================\n`);
-
-  // 3. Attempt email delivery
-  const resendApiKey = (process.env.RESEND_API_KEY || "").trim();
-  
-  // Method A: Resend HTTP API (Port 443 - 100% reliable on Render & Vercel)
-  if (resendApiKey) {
-    try {
-      const resendFrom = process.env.RESEND_FROM || "HighP Platform <onboarding@resend.dev>";
-      const response = await fetch("https://api.resend.com/emails", {
-        method: "POST",
-        headers: {
-          "Authorization": `Bearer ${resendApiKey}`,
-          "Content-Type": "application/json"
-        },
-        body: JSON.stringify({
-          from: resendFrom,
-          to: [normalizedEmail],
-          subject: `${otp} is your HighP verification code`,
-          html: buildEmailHTML(otp)
-        })
-      });
-      const data = await response.json();
-      if (response.ok) {
-        console.log(`[OTP SUCCESS] Delivered via Resend HTTP API to ${normalizedEmail} (ID: ${data.id})`);
-        return true;
-      } else {
-        console.warn(`[OTP RESEND WARN]:`, data);
-      }
-    } catch (resendErr) {
-      console.warn(`[OTP RESEND ERROR]:`, resendErr.message);
-    }
+  // Security: Only log OTP in non-production environments
+  if (process.env.NODE_ENV !== "production") {
+    console.log(`[OTP GENERATED] Email: ${normalizedEmail}, Code: ${otp}`);
+  } else {
+    console.log(`[OTP GENERATED] Email: ${normalizedEmail}`);
   }
 
-  // Method B: Nodemailer Dual-Port Race (For Localhost)
-  const smtpUser = (process.env.SMTP_USER || "highphaus@gmail.com").trim();
-  const smtpFrom = process.env.SMTP_FROM || `"HighP Platform" <${smtpUser}>`;
+  // 3. Create & Verify Transporter before sending
+  const transporter = getTransporter();
 
+  try {
+    // Verify SMTP Connection & Credentials
+    await transporter.verify();
+    console.log("[Nodemailer] Transporter verified successfully.");
+  } catch (verifyError) {
+    if (verifyError.message && (verifyError.message.includes("535") || verifyError.code === "EAUTH")) {
+      console.error("Invalid Gmail App Password. Generate a new Google App Password.");
+    }
+    console.error("Nodemailer Transporter Verification Error:", {
+      message: verifyError.message,
+      code: verifyError.code,
+      command: verifyError.command,
+      response: verifyError.response,
+      responseCode: verifyError.responseCode,
+      stack: verifyError.stack
+    });
+    return false;
+  }
+
+  // 4. Send Mail
+  const emailUser = (process.env.EMAIL_USER || "").trim();
   const mailOptions = {
-    from: smtpFrom,
+    from: `"HighP Platform" <${emailUser}>`,
     to: normalizedEmail,
     subject: `${otp} is your HighP verification code`,
     html: buildEmailHTML(otp),
-    text: `Your HighP verification code is: ${otp}\n\nThis code expires in 10 minutes.`,
+    text: `Your HighP verification code is: ${otp}\n\nThis code expires in 10 minutes.`
   };
 
-  const attempt587 = getTransporter(587).sendMail(mailOptions);
-  const attempt465 = getTransporter(465).sendMail(mailOptions);
-
   try {
-    const result = await Promise.any([attempt587, attempt465]);
-    console.log(`[OTP SUCCESS] Email delivered successfully to ${normalizedEmail} (MessageID: ${result.messageId})`);
+    const info = await transporter.sendMail(mailOptions);
+    console.log(`[OTP SUCCESS] Email delivered to ${normalizedEmail} (MessageID: ${info.messageId})`);
     return true;
-  } catch (err) {
-    console.error(`[OTP ERROR] Email delivery failed on both ports:`, err.message || err);
-    return true;
+  } catch (error) {
+    if (error.message && (error.message.includes("535") || error.code === "EAUTH")) {
+      console.error("Invalid Gmail App Password. Generate a new Google App Password.");
+    }
+    console.error("Nodemailer Send Mail Error:", {
+      message: error.message,
+      code: error.code,
+      command: error.command,
+      response: error.response,
+      responseCode: error.responseCode,
+      stack: error.stack
+    });
+    return false;
   }
 }
 
-// ── Verify OTP (MongoDB Atlas persistent verification) ─────────────────────────
+// ── Verify OTP ───────────────────────────────────────────────
 async function verifyOTP(email, otp) {
   const normalizedEmail = (email || "").toLowerCase().trim();
   const inputOtp = (otp || "").trim();

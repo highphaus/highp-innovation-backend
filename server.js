@@ -66,6 +66,11 @@ const PORT = process.env.PORT || 5000;
 
 app.listen(PORT, () => {
   console.log(`🚀 Gateway Server running seamlessly on port ${PORT}`);
+  console.log("Environment Variables Check:", {
+    mongo: !!process.env.MONGO_URI,
+    emailUser: !!process.env.EMAIL_USER,
+    emailPass: !!process.env.EMAIL_PASS
+  });
   
   // Initialize background sheets worker
   const Store = require('./models/Store');
