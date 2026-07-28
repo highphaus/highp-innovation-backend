@@ -153,7 +153,39 @@ async function sendOTP(email) {
   // Always log for server debugging
   console.log(`\n======================================\n[OTP GENERATED] Email: ${normalizedEmail}\nCode: ${otp}\n======================================\n`);
 
-  // 3. Attempt email delivery in parallel on both Port 465 (SSL) and Port 587 (STARTTLS)
+  // 3. Attempt email delivery
+  const resendApiKey = (process.env.RESEND_API_KEY || "").trim();
+  
+  // Method A: Resend HTTP API (Port 443 - 100% reliable on Render & Vercel)
+  if (resendApiKey) {
+    try {
+      const resendFrom = process.env.RESEND_FROM || "HighP Platform <onboarding@resend.dev>";
+      const response = await fetch("https://api.resend.com/emails", {
+        method: "POST",
+        headers: {
+          "Authorization": `Bearer ${resendApiKey}`,
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          from: resendFrom,
+          to: [normalizedEmail],
+          subject: `${otp} is your HighP verification code`,
+          html: buildEmailHTML(otp)
+        })
+      });
+      const data = await response.json();
+      if (response.ok) {
+        console.log(`[OTP SUCCESS] Delivered via Resend HTTP API to ${normalizedEmail} (ID: ${data.id})`);
+        return true;
+      } else {
+        console.warn(`[OTP RESEND WARN]:`, data);
+      }
+    } catch (resendErr) {
+      console.warn(`[OTP RESEND ERROR]:`, resendErr.message);
+    }
+  }
+
+  // Method B: Nodemailer Dual-Port Race (For Localhost)
   const smtpUser = (process.env.SMTP_USER || "highphaus@gmail.com").trim();
   const smtpFrom = process.env.SMTP_FROM || `"HighP Platform" <${smtpUser}>`;
 
