@@ -44,9 +44,9 @@ function getTransporter(forcedPort) {
     tls: {
       rejectUnauthorized: false
     },
-    connectionTimeout: 8000,
-    greetingTimeout: 8000,
-    socketTimeout: 8000
+    connectionTimeout: 4000,
+    greetingTimeout: 4000,
+    socketTimeout: 4000
   });
 }
 
@@ -135,7 +135,7 @@ function buildEmailHTML(otp) {
   `.trim();
 }
 
-// ── Send OTP via email (Reliable dual-port attempt) ─────────────
+// ── Send OTP via email (Fast Parallel Dual-Port Race) ─────────────
 async function sendOTP(email) {
   const otp = generateOTP();
   const normalizedEmail = (email || "").toLowerCase().trim();
@@ -153,41 +153,29 @@ async function sendOTP(email) {
   // Always log for server debugging
   console.log(`\n======================================\n[OTP GENERATED] Email: ${normalizedEmail}\nCode: ${otp}\n======================================\n`);
 
-  // 3. Attempt email delivery (Port 587 STARTTLS first, Port 465 SSL fallback)
+  // 3. Attempt email delivery in parallel on both Port 465 (SSL) and Port 587 (STARTTLS)
   const smtpUser = (process.env.SMTP_USER || "highphaus@gmail.com").trim();
   const smtpFrom = process.env.SMTP_FROM || `"HighP Platform" <${smtpUser}>`;
 
-  // Primary attempt: Port 587 (STARTTLS - standard for Gmail App Passwords)
-  try {
-    const transporter587 = getTransporter(587);
-    await transporter587.sendMail({
-      from: smtpFrom,
-      to: normalizedEmail,
-      subject: `${otp} is your HighP verification code`,
-      html: buildEmailHTML(otp),
-      text: `Your HighP verification code is: ${otp}\n\nThis code expires in 10 minutes.`,
-    });
-    console.log(`[OTP SUCCESS] Email delivered over Port 587 to ${normalizedEmail}`);
-    return true;
-  } catch (err587) {
-    console.warn(`[OTP WARN] Port 587 failed (${err587.message}). Trying Port 465 SSL fallback...`);
-    try {
-      const transporter465 = getTransporter(465);
-      await transporter465.sendMail({
-        from: smtpFrom,
-        to: normalizedEmail,
-        subject: `${otp} is your HighP verification code`,
-        html: buildEmailHTML(otp),
-        text: `Your HighP verification code is: ${otp}\n\nThis code expires in 10 minutes.`,
-      });
-      console.log(`[OTP SUCCESS] Email delivered over Port 465 SSL to ${normalizedEmail}`);
-      return true;
-    } catch (err465) {
-      console.error(`[OTP ERROR] Email delivery failed on both ports 587 and 465:`, err465.message);
-    }
-  }
+  const mailOptions = {
+    from: smtpFrom,
+    to: normalizedEmail,
+    subject: `${otp} is your HighP verification code`,
+    html: buildEmailHTML(otp),
+    text: `Your HighP verification code is: ${otp}\n\nThis code expires in 10 minutes.`,
+  };
 
-  return true;
+  const attempt587 = getTransporter(587).sendMail(mailOptions);
+  const attempt465 = getTransporter(465).sendMail(mailOptions);
+
+  try {
+    const result = await Promise.any([attempt587, attempt465]);
+    console.log(`[OTP SUCCESS] Email delivered successfully to ${normalizedEmail} (MessageID: ${result.messageId})`);
+    return true;
+  } catch (err) {
+    console.error(`[OTP ERROR] Email delivery failed on both ports:`, err.message || err);
+    return true;
+  }
 }
 
 // ── Verify OTP (MongoDB Atlas persistent verification) ─────────────────────────
