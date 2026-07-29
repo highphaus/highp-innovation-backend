@@ -1,6 +1,6 @@
 // ────────────────────────────────────────────────────────────
 // services/otpService.js
-// Production-Ready OTP Service with Single Verified Gmail SMTP Transporter
+// Production-Ready OTP Service with Dual Gmail SMTP Transporters & Robust Fallback
 // ────────────────────────────────────────────────────────────
 
 const nodemailer = require("nodemailer");
@@ -20,30 +20,38 @@ function ipv4Lookup(hostname, options, callback) {
   return dns.lookup(hostname, { family: 4 }, callback);
 }
 
-// ── Single SMTP Transporter (Port 465 SSL) ──────────────────
-function getTransporter() {
+// ── Gmail Transporters (Primary Service & Fallback Port 587) ──
+function getTransporters() {
   const user = (process.env.EMAIL_USER || process.env.SMTP_USER || process.env.MAIL_USER || "highphaus@gmail.com").trim();
   const rawPass = (process.env.EMAIL_PASS || process.env.SMTP_PASS || process.env.MAIL_PASS || "jvdshhpqzhgageqt").trim();
   const pass = rawPass.replace(/\s+/g, ""); // Strip spaces from Gmail App Password
 
-  return nodemailer.createTransport({
+  const primary = nodemailer.createTransport({
     service: "gmail",
-    host: "smtp.gmail.com",
-    port: 465,
-    secure: true, // Port 465 requires secure: true
-    family: 4, // Force IPv4 socket connection
+    auth: { user, pass },
+    tls: { rejectUnauthorized: false },
+    family: 4,
     lookup: ipv4Lookup,
-    auth: {
-      user: user,
-      pass: pass,
-    },
-    tls: {
-      rejectUnauthorized: false
-    },
-    connectionTimeout: 10000,
-    greetingTimeout: 10000,
-    socketTimeout: 10000
+    connectionTimeout: 12000,
+    greetingTimeout: 12000,
+    socketTimeout: 12000
   });
+
+  const fallback = nodemailer.createTransport({
+    host: "smtp.gmail.com",
+    port: 587,
+    secure: false,
+    requireTLS: true,
+    auth: { user, pass },
+    tls: { rejectUnauthorized: false },
+    family: 4,
+    lookup: ipv4Lookup,
+    connectionTimeout: 12000,
+    greetingTimeout: 12000,
+    socketTimeout: 12000
+  });
+
+  return { primary, fallback, user };
 }
 
 // ── Generate 6-digit random OTP ──────────────────────────────
@@ -139,67 +147,43 @@ async function sendOTP(email) {
   // 1. Save OTP to memory store
   memoryOtpStore.set(normalizedEmail, { otp, expiresAt: Date.now() + 10 * 60 * 1000 });
 
-  // 2. Persist in MongoDB Atlas asynchronously in background
+  // 2. Persist in MongoDB Atlas asynchronously
   Otp.deleteMany({ email: normalizedEmail })
     .then(() => Otp.create({ email: normalizedEmail, otp }))
     .catch((dbErr) => {
       console.warn(`[OTP DB SAVE]:`, dbErr.message);
     });
 
-  // Security: Only log OTP in non-production environments
-  if (process.env.NODE_ENV !== "production") {
-    console.log(`[OTP GENERATED] Email: ${normalizedEmail}, Code: ${otp}`);
-  } else {
-    console.log(`[OTP GENERATED] Email: ${normalizedEmail}`);
-  }
+  console.log(`[OTP GENERATED] Email: ${normalizedEmail}`);
 
-  // 3. Nodemailer Gmail SMTP Transport
-  const transporter = getTransporter();
-
-  try {
-    // Verify SMTP Connection & Credentials
-    await transporter.verify();
-    console.log("[Nodemailer] Transporter verified successfully.");
-  } catch (verifyError) {
-    if (verifyError.message && (verifyError.message.includes("535") || verifyError.code === "EAUTH")) {
-      console.error("Invalid Gmail App Password. Generate a new Google App Password.");
-    }
-    console.error("Nodemailer Transporter Verification Error:", {
-      message: verifyError.message,
-      code: verifyError.code,
-      command: verifyError.command,
-      response: verifyError.response,
-      responseCode: verifyError.responseCode,
-      stack: verifyError.stack
-    });
-    return false;
-  }
-
-  // 4. Send Mail
-  const emailUser = (process.env.EMAIL_USER || "").trim();
+  // 3. Prepare email payload
+  const { primary, fallback, user } = getTransporters();
   const mailOptions = {
-    from: `"HighP Platform" <${emailUser}>`,
+    from: `"HighP Platform" <${user}>`,
     to: normalizedEmail,
     subject: `${otp} is your HighP verification code`,
     html: buildEmailHTML(otp),
     text: `Your HighP verification code is: ${otp}\n\nThis code expires in 10 minutes.`
   };
 
+  // 4. Try Primary SMTP Transporter
   try {
-    const info = await transporter.sendMail(mailOptions);
-    console.log(`[OTP SUCCESS] Email delivered to ${normalizedEmail} (MessageID: ${info.messageId})`);
+    const info = await primary.sendMail(mailOptions);
+    console.log(`[OTP SUCCESS] Email delivered to ${normalizedEmail} via Primary (MessageID: ${info.messageId})`);
     return true;
-  } catch (error) {
-    if (error.message && (error.message.includes("535") || error.code === "EAUTH")) {
-      console.error("Invalid Gmail App Password. Generate a new Google App Password.");
-    }
-    console.error("Nodemailer Send Mail Error:", {
-      message: error.message,
-      code: error.code,
-      command: error.command,
-      response: error.response,
-      responseCode: error.responseCode,
-      stack: error.stack
+  } catch (primaryErr) {
+    console.warn(`[OTP PRIMARY FAILED]: ${primaryErr.message}. Attempting fallback port 587...`);
+  }
+
+  // 5. Try Fallback SMTP Transporter (Port 587 STARTTLS)
+  try {
+    const info = await fallback.sendMail(mailOptions);
+    console.log(`[OTP SUCCESS] Email delivered to ${normalizedEmail} via Fallback 587 (MessageID: ${info.messageId})`);
+    return true;
+  } catch (fallbackErr) {
+    console.error(`[OTP FALLBACK FAILED] Email could not be sent to ${normalizedEmail}:`, {
+      message: fallbackErr.message,
+      code: fallbackErr.code
     });
     return false;
   }

@@ -61,7 +61,11 @@ router.post('/send-otp', async (req, res) => {
       }
     }
 
-    await sendOTP(cleanEmail);
+    const sent = await sendOTP(cleanEmail);
+    if (!sent) {
+      return res.status(500).json({ message: "Failed to send verification email. Please check your email address or try again in a moment." });
+    }
+
     res.json({ success: true, message: "OTP sent successfully. Check your email." });
   } catch (err) {
     console.error("Customer send-otp error:", err);
