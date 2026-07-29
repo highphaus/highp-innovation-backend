@@ -15,6 +15,12 @@ const OrderSchema = new mongoose.Schema({
     }
   ],
   totalAmount: { type: Number, required: true },
+  subtotal: { type: Number, default: 0 },
+  taxAmount: { type: Number, default: 0 },
+  taxRate: { type: Number, default: 0 },
+  otherCharges: { type: Number, default: 0 },
+  otherChargesLabel: { type: String, default: "" },
+  deliveryFee: { type: Number, default: 0 },
   status: { 
     type: String, 
     enum: ['pending', 'preparing', 'completed', 'cancelled'], 
