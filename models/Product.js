@@ -33,6 +33,8 @@ const ProductSchema = new mongoose.Schema({
   unit: { type: String, default: "" },
   offerPrice: { type: Number, default: 0 },
   stock: { type: Number, default: 0 },
+  inStock: { type: Boolean, default: true },
+  isOutOfStock: { type: Boolean, default: false },
   status: { type: String, default: "active" }, // active, inactive
   featured: { type: Boolean, default: false },
   tags: { type: [String], default: [] },

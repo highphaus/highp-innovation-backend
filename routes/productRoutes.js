@@ -65,4 +65,21 @@ router.put('/:id', async (req, res) => {
   }
 });
 
+// Admin Toggle Stock Status (In Stock vs Out of Stock)
+router.patch('/:id/toggle-stock', async (req, res) => {
+  try {
+    const product = await Product.findById(req.params.id);
+    if (!product) return res.status(404).json({ message: "Product not found" });
+
+    const newInStock = req.body.inStock !== undefined ? Boolean(req.body.inStock) : (product.inStock === false || product.isOutOfStock === true ? true : false);
+    product.inStock = newInStock;
+    product.isOutOfStock = !newInStock;
+    await product.save();
+
+    res.json(product);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 module.exports = router;
