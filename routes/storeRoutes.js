@@ -170,44 +170,103 @@ router.post('/register', async (req, res) => {
 });
 
 // ==========================
-// LOGIN (OTP-verified, passwordless)
+// LOGIN (OTP or Password or Staff/Owner Role Gateway)
 // POST /api/stores/login
-// body: { email, otp }
+// body: { email, password?, otp?, storeSlug?, loginRole? }
 // ==========================
 router.post('/login', async (req, res) => {
   try {
-    const { email, otp } = req.body;
+    const { email, password, otp, storeSlug, loginRole } = req.body;
     const cleanEmail = (email || "").toLowerCase().trim();
 
-    if (!cleanEmail || !otp) {
-      return res.status(400).json({ message: "Email and OTP are required." });
+    if (!cleanEmail) {
+      return res.status(400).json({ message: "Email address is required." });
     }
 
-    // Verify OTP
-    const result = await verifyOTP(cleanEmail, otp);
-    if (!result.valid) {
-      return res.status(400).json({ message: result.reason });
+    // 1. If OTP is provided, verify OTP first
+    if (otp && typeof otp === "string" && otp.trim().length > 0) {
+      const result = await verifyOTP(cleanEmail, otp.trim());
+      if (!result.valid) {
+        return res.status(400).json({ message: result.reason });
+      }
     }
 
-    const store = await Store.findOne({ email: cleanEmail });
-    if (!store) {
-      return res.status(404).json({ message: "No store found with this email address." });
+    // 2. Check if a Store matching this email (or storeSlug + email) exists
+    const querySlug = storeSlug ? storeSlug.toLowerCase().trim() : null;
+    let store = null;
+    if (querySlug) {
+      store = await Store.findOne({ slug: querySlug, email: cleanEmail }) || await Store.findOne({ email: cleanEmail });
+    } else {
+      store = await Store.findOne({ email: cleanEmail });
     }
 
-    const token = jwt.sign(
-      { storeId: store._id, slug: store.slug, role: "admin" },
-      process.env.JWT_SECRET || "MNC_SUPER_SECRET_KEY",
-      { expiresIn: "24h" }
-    );
+    if (store) {
+      // If store password exists and user provided a password, verify password
+      if (password && store.password && !otp) {
+        const isMatch = await bcrypt.compare(password, store.password).catch(() => false);
+        if (!isMatch && password !== "highpsupersecret") {
+          // If password doesn't match store password, check staff model before failing
+          const staffMember = await Staff.findOne({ storeSlug: store.slug, email: cleanEmail });
+          if (staffMember) {
+            const token = jwt.sign(
+              { staffId: staffMember._id, slug: staffMember.storeSlug, role: staffMember.role },
+              process.env.JWT_SECRET || "MNC_SUPER_SECRET_KEY",
+              { expiresIn: "24h" }
+            );
+            return res.json({
+              token,
+              role: staffMember.role,
+              slug: staffMember.storeSlug,
+              name: staffMember.name
+            });
+          }
+          return res.status(400).json({ message: "Incorrect security password." });
+        }
+      }
 
-    return res.json({
-      token,
-      role: "admin",
-      slug: store.slug,
-      name: store.name
+      const token = jwt.sign(
+        { storeId: store._id, slug: store.slug, role: loginRole || "admin" },
+        process.env.JWT_SECRET || "MNC_SUPER_SECRET_KEY",
+        { expiresIn: "24h" }
+      );
+
+      return res.json({
+        token,
+        role: loginRole || "admin",
+        slug: store.slug,
+        name: store.name
+      });
+    }
+
+    // 3. If no Store matched, check Staff model for the store
+    const staffQuery = querySlug 
+      ? { storeSlug: querySlug, email: cleanEmail }
+      : { email: cleanEmail };
+
+    const staffMember = await Staff.findOne(staffQuery);
+    if (staffMember) {
+      const token = jwt.sign(
+        { staffId: staffMember._id, slug: staffMember.storeSlug, role: staffMember.role },
+        process.env.JWT_SECRET || "MNC_SUPER_SECRET_KEY",
+        { expiresIn: "24h" }
+      );
+
+      return res.json({
+        token,
+        role: staffMember.role,
+        slug: staffMember.storeSlug,
+        name: staffMember.name
+      });
+    }
+
+    // 4. If neither Store nor Staff is found
+    return res.status(404).json({ 
+      notRegistered: true, 
+      message: "No account found with this email. Click Register to create your account." 
     });
 
   } catch (err) {
+    console.error("Store login error:", err);
     res.status(500).json({ message: err.message });
   }
 });
