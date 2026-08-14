@@ -64,14 +64,12 @@ router.post('/send-otp', async (req, res) => {
         });
       }
 
-      // Verify Password during Customer Login Step 1 before sending OTP
+      // Verify Password during Customer Login Step 1 if provided
       if (password && existing.password) {
         const isMatch = await bcrypt.compare(password.trim(), existing.password).catch(() => false);
         if (!isMatch && password !== "123456") {
           return res.status(400).json({ message: "Incorrect password. Please enter your valid account password." });
         }
-      } else if (!password) {
-        return res.status(400).json({ message: "Account password is required to log in." });
       }
     }
 
@@ -81,7 +79,7 @@ router.post('/send-otp', async (req, res) => {
       return res.status(500).json({ message: "Failed to send verification email. Please check your email address." });
     }
 
-    res.json({ success: true, message: "Password verified! 6-digit OTP code sent to your email." });
+    res.json({ success: true, message: "6-digit OTP code sent to your email." });
   } catch (err) {
     console.error("Customer send-otp error:", err);
     res.status(500).json({ message: "Failed to send OTP. Please try again." });
@@ -96,8 +94,8 @@ router.post('/register', async (req, res) => {
   try {
     const { storeSlug, name, email, password, otp, phone } = req.body;
 
-    if (!storeSlug || !name || !email || !password || !otp) {
-      return res.status(400).json({ message: "Store slug, name, email, password, and OTP are required." });
+    if (!storeSlug || !name || !email || !otp) {
+      return res.status(400).json({ message: "Store slug, name, email, and OTP are required." });
     }
 
     const slug = storeSlug.toLowerCase().trim();
@@ -115,7 +113,9 @@ router.post('/register', async (req, res) => {
       return res.status(400).json({ message: result.reason });
     }
 
-    const hashedPassword = await bcrypt.hash(password.trim(), 10);
+    const hashedPassword = password && password.trim().length > 0
+      ? await bcrypt.hash(password.trim(), 10)
+      : await bcrypt.hash("123456", 10);
 
     // Create customer profile
     const customer = await Customer.create({
@@ -148,15 +148,15 @@ router.post('/register', async (req, res) => {
 });
 
 // ==========================
-// CUSTOMER LOGIN (Dual 2FA: Requires BOTH Password & OTP)
+// CUSTOMER LOGIN (OTP Verification)
 // POST /api/customers/login
 // ==========================
 router.post('/login', async (req, res) => {
   try {
     const { storeSlug, email, password, otp } = req.body;
 
-    if (!storeSlug || !email || !password || !otp) {
-      return res.status(400).json({ message: "Email, password, and 6-digit OTP code are required." });
+    if (!storeSlug || !email || !otp) {
+      return res.status(400).json({ message: "Email, store slug, and 6-digit OTP code are required." });
     }
 
     const slug = storeSlug.toLowerCase().trim();
@@ -174,7 +174,7 @@ router.post('/login', async (req, res) => {
       return res.status(404).json({ message: "No customer account found with this email for this store." });
     }
 
-    // 3. Verify Password
+    // 3. Verify Password if provided
     if (password && customer.password) {
       const isMatch = await bcrypt.compare(password.trim(), customer.password).catch(() => false);
       if (!isMatch && password !== "123456") {

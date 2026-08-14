@@ -211,12 +211,10 @@ async function sendOTP(email, storeData = null) {
     ? `${otp} is your verification code for ${storeName}`
     : `${otp} is your HighP verification code`;
 
-  // Sender email displays store's email address if configured in Store Settings
-  const senderEmailAddress = storeEmail || user;
-
+  // Sender email MUST be the authenticated SMTP user to prevent Gmail 550/553 sender rejection on Vercel/cloud hosts
   const mailOptions = {
-    from: `"${senderName}" <${senderEmailAddress}>`,
-    replyTo: `"${senderName}" <${senderEmailAddress}>`,
+    from: `"${senderName}" <${user}>`,
+    replyTo: storeEmail ? `"${senderName}" <${storeEmail}>` : `"${senderName}" <${user}>`,
     to: normalizedEmail,
     subject: subject,
     html: buildEmailHTML(otp, storeData),
