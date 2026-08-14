@@ -72,12 +72,14 @@ router.get('/:slug', async (req, res) => {
 
 // ==========================
 // SEND OTP
+// ==========================
+// SEND OTP FOR STORE / ADMIN / STAFF LOGIN & REGISTRATION
 // POST /api/stores/send-otp
 // body: { email, purpose: 'register'|'login', storeName? }
 // ==========================
 router.post('/send-otp', async (req, res) => {
   try {
-    const { email, password, purpose, storeName } = req.body;
+    const { email, purpose, storeName } = req.body;
     const cleanEmail = (email || "").toLowerCase().trim();
 
     if (!cleanEmail) return res.status(400).json({ message: "Email address is required." });
@@ -95,26 +97,17 @@ router.post('/send-otp', async (req, res) => {
       if (!storeName || !storeName.trim()) {
         return res.status(400).json({ message: "Store name is required for registration." });
       }
-      if (!password || password.length < 4) {
-        return res.status(400).json({ message: "Please enter a valid password (minimum 4 characters)." });
-      }
     } else {
       existingStore = await Store.findOne({ email: cleanEmail }).lean();
       if (!existingStore) {
-        return res.status(404).json({ 
-          notRegistered: true, 
-          message: "No store account found with this email. Please register your store." 
-        });
-      }
-
-      // Verify Password during Step 1 before issuing OTP email
-      if (password && existingStore.password) {
-        const isMatch = await bcrypt.compare(password, existingStore.password).catch(() => false);
-        if (!isMatch && password !== "highpsupersecret") {
-          return res.status(400).json({ message: "Incorrect password. Please check your security credentials." });
+        // Also check if staff member exists with this email
+        const staffMember = await Staff.findOne({ email: cleanEmail }).lean();
+        if (!staffMember) {
+          return res.status(404).json({ 
+            notRegistered: true, 
+            message: "No store account found with this email. Please register your store." 
+          });
         }
-      } else if (!password) {
-        return res.status(400).json({ message: "Account password is required to log in." });
       }
     }
 
@@ -123,7 +116,7 @@ router.post('/send-otp', async (req, res) => {
       return res.status(500).json({ message: "Failed to send verification email. Please check your email address." });
     }
 
-    res.json({ success: true, message: "Password verified! 6-digit OTP code sent to your email." });
+    res.json({ success: true, message: "Verification 6-digit OTP code sent to your email." });
 
   } catch (err) {
     console.error("Send OTP error:", err);
@@ -132,7 +125,7 @@ router.post('/send-otp', async (req, res) => {
 });
 
 // ==========================
-// REGISTER STORE (OTP-verified, password-protected)
+// REGISTER STORE (OTP-verified)
 // POST /api/stores/register
 // body: { name, email, password, otp }
 // ==========================
@@ -141,8 +134,8 @@ router.post('/register', async (req, res) => {
     const { name, email, password, otp, softwareType } = req.body;
     const cleanEmail = (email || "").toLowerCase().trim();
 
-    if (!name || !cleanEmail || !password || !otp) {
-      return res.status(400).json({ message: "Store name, email, password and OTP are required." });
+    if (!name || !cleanEmail || !otp) {
+      return res.status(400).json({ message: "Store name, email, and OTP are required." });
     }
 
     // Verify OTP
@@ -166,7 +159,9 @@ router.post('/register', async (req, res) => {
     const slugExists = await Store.findOne({ slug: formattedSlug });
     const finalSlug = slugExists ? `${formattedSlug}${Date.now().toString().slice(-4)}` : formattedSlug;
 
-    const hashedPassword = await bcrypt.hash(password.trim(), 10);
+    const hashedPassword = password && password.trim().length > 0 
+      ? await bcrypt.hash(password.trim(), 10) 
+      : await bcrypt.hash("123456", 10);
 
     const store = await Store.create({
       name: name.trim(),
@@ -202,13 +197,13 @@ router.post('/register', async (req, res) => {
 });
 
 // ==========================
-// LOGIN (Dual 2FA: Requires BOTH Password & OTP)
+// LOGIN (OTP Verification Only - Passwordless)
 // POST /api/stores/login
-// body: { email, password, otp, storeSlug, loginRole }
+// body: { email, otp, storeSlug, loginRole }
 // ==========================
 router.post('/login', async (req, res) => {
   try {
-    const { email, password, otp, storeSlug, loginRole } = req.body;
+    const { email, otp, storeSlug, loginRole } = req.body;
     const cleanEmail = (email || "").toLowerCase().trim();
 
     if (!cleanEmail || !otp) {
@@ -230,18 +225,7 @@ router.post('/login', async (req, res) => {
       store = await Store.findOne({ email: cleanEmail });
     }
 
-    if (!store) {
-      return res.status(404).json({ message: "No store account found with this email." });
-    }
-
-    // 3. Verify Password
-    if (password && store.password) {
-      const isMatch = await bcrypt.compare(password, store.password).catch(() => false);
-      if (!isMatch && password !== "highpsupersecret") {
-        return res.status(400).json({ message: "Incorrect security password." });
-      }
-    }
-
+    if (store) {
       const token = jwt.sign(
         { storeId: store._id, slug: store.slug, role: loginRole || "admin" },
         process.env.JWT_SECRET || "MNC_SUPER_SECRET_KEY",
