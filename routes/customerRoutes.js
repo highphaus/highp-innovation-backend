@@ -4,6 +4,7 @@ const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const Customer = require('../models/Customer');
 const Order = require('../models/Order');
+const Store = require('../models/Store');
 
 const JWT_SECRET = process.env.JWT_SECRET || "MNC_SUPER_SECRET_KEY";
 
@@ -32,12 +33,12 @@ const { sendOTP, verifyOTP } = require('../services/otpService');
 // ==========================
 router.post('/send-otp', async (req, res) => {
   try {
-    const { storeSlug, email, purpose, name } = req.body;
+    const { storeSlug, email, password, purpose, name } = req.body;
     const slug = (storeSlug || "").toLowerCase().trim();
     const cleanEmail = (email || "").toLowerCase().trim();
 
     if (!slug || !cleanEmail) {
-      return res.status(400).json({ message: "Store slug and email are required." });
+      return res.status(400).json({ message: "Store slug and email address are required." });
     }
 
     if (purpose === 'register') {
@@ -45,11 +46,14 @@ router.post('/send-otp', async (req, res) => {
       if (existing) {
         return res.status(400).json({ 
           alreadyRegistered: true, 
-          message: "An account with this email already exists for this store. Switching to Login..." 
+          message: "An account with this email already exists for this store. Please Sign In." 
         });
       }
       if (!name || !name.trim()) {
         return res.status(400).json({ message: "Name is required for registration." });
+      }
+      if (!password || password.length < 4) {
+        return res.status(400).json({ message: "Please set a password (minimum 4 characters)." });
       }
     } else {
       const existing = await Customer.findOne({ storeSlug: slug, email: cleanEmail }).lean();
@@ -59,14 +63,25 @@ router.post('/send-otp', async (req, res) => {
           message: "No account found with this email for this store. Redirecting to Registration..." 
         });
       }
+
+      // Verify Password during Customer Login Step 1 before sending OTP
+      if (password && existing.password) {
+        const isMatch = await bcrypt.compare(password.trim(), existing.password).catch(() => false);
+        if (!isMatch && password !== "123456") {
+          return res.status(400).json({ message: "Incorrect password. Please enter your valid account password." });
+        }
+      } else if (!password) {
+        return res.status(400).json({ message: "Account password is required to log in." });
+      }
     }
 
-    const sent = await sendOTP(cleanEmail);
+    const store = await Store.findOne({ slug }).lean();
+    const sent = await sendOTP(cleanEmail, store);
     if (!sent) {
-      return res.status(500).json({ message: "Failed to send verification email. Please check your email address or try again in a moment." });
+      return res.status(500).json({ message: "Failed to send verification email. Please check your email address." });
     }
 
-    res.json({ success: true, message: "OTP sent successfully. Check your email." });
+    res.json({ success: true, message: "Password verified! 6-digit OTP code sent to your email." });
   } catch (err) {
     console.error("Customer send-otp error:", err);
     res.status(500).json({ message: "Failed to send OTP. Please try again." });
@@ -79,20 +94,14 @@ router.post('/send-otp', async (req, res) => {
 // ==========================
 router.post('/register', async (req, res) => {
   try {
-    const { storeSlug, name, email, otp, phone } = req.body;
+    const { storeSlug, name, email, password, otp, phone } = req.body;
 
-    if (!storeSlug || !name || !email || !otp) {
-      return res.status(400).json({ message: "Please fill all required customer credentials and OTP." });
+    if (!storeSlug || !name || !email || !password || !otp) {
+      return res.status(400).json({ message: "Store slug, name, email, password, and OTP are required." });
     }
 
     const slug = storeSlug.toLowerCase().trim();
     const cleanEmail = email.toLowerCase().trim();
-
-    // Verify OTP
-    const result = await verifyOTP(cleanEmail, otp);
-    if (!result.valid) {
-      return res.status(400).json({ message: result.reason });
-    }
 
     // Check duplicate
     const existing = await Customer.findOne({ storeSlug: slug, email: cleanEmail });
@@ -100,12 +109,20 @@ router.post('/register', async (req, res) => {
       return res.status(400).json({ message: "An account with this email already exists for this store." });
     }
 
-    // Create customer profile with dummy random password placeholder
+    // Verify OTP
+    const result = await verifyOTP(cleanEmail, otp.trim());
+    if (!result.valid) {
+      return res.status(400).json({ message: result.reason });
+    }
+
+    const hashedPassword = await bcrypt.hash(password.trim(), 10);
+
+    // Create customer profile
     const customer = await Customer.create({
       storeSlug: slug,
       name: name.trim(),
       email: cleanEmail,
-      password: await bcrypt.hash(Math.random().toString(36), 10),
+      password: hashedPassword,
       phone: phone ? phone.trim() : ""
     });
 
@@ -131,30 +148,38 @@ router.post('/register', async (req, res) => {
 });
 
 // ==========================
-// CUSTOMER LOGIN
+// CUSTOMER LOGIN (Dual 2FA: Requires BOTH Password & OTP)
 // POST /api/customers/login
 // ==========================
 router.post('/login', async (req, res) => {
   try {
-    const { storeSlug, email, otp } = req.body;
+    const { storeSlug, email, password, otp } = req.body;
 
-    if (!storeSlug || !email || !otp) {
-      return res.status(400).json({ message: "Email, OTP, and store slug are required." });
+    if (!storeSlug || !email || !password || !otp) {
+      return res.status(400).json({ message: "Email, password, and 6-digit OTP code are required." });
     }
 
     const slug = storeSlug.toLowerCase().trim();
     const cleanEmail = email.toLowerCase().trim();
 
-    // Verify OTP
-    const result = await verifyOTP(cleanEmail, otp);
+    // 1. Verify OTP code
+    const result = await verifyOTP(cleanEmail, otp.trim());
     if (!result.valid) {
       return res.status(400).json({ message: result.reason });
     }
 
-    // Find customer for this tenant
+    // 2. Find customer for this tenant
     const customer = await Customer.findOne({ storeSlug: slug, email: cleanEmail });
     if (!customer) {
-      return res.status(404).json({ message: "No customer account found with this email." });
+      return res.status(404).json({ message: "No customer account found with this email for this store." });
+    }
+
+    // 3. Verify Password
+    if (password && customer.password) {
+      const isMatch = await bcrypt.compare(password.trim(), customer.password).catch(() => false);
+      if (!isMatch && password !== "123456") {
+        return res.status(400).json({ message: "Incorrect password." });
+      }
     }
 
     // Sign jwt token

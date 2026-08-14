@@ -7,7 +7,7 @@ const PayoutSchema = new mongoose.Schema({
   bankName: { type: String, required: true },
   accountNumber: { type: String, required: true },
   ifscCode: { type: String, required: true },
-  status: { type: String, enum: ['Requested', 'Processing', 'Completed', 'Failed'], default: 'Requested' },
+  status: { type: String, enum: ['pending', 'approved', 'paid', 'rejected', 'Requested', 'Processing', 'Completed', 'Failed'], default: 'pending' },
   requestedAt: { type: Date, default: Date.now },
   processedAt: { type: Date }
 }, { timestamps: true });

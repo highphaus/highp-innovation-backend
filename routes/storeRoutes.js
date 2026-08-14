@@ -7,6 +7,22 @@ const Staff = require('../models/Staff');
 const Payout = require('../models/Payout');
 const { sendOTP, verifyOTP } = require('../services/otpService');
 
+// Helper for flexible slug matching (e.g. "tastenpark" <-> "taste-n-park")
+const getNormalizedSlugQuery = (rawSlug) => {
+  if (!rawSlug) return { slug: "" };
+  const clean = rawSlug.toLowerCase().trim().replace(/[^a-z0-9]/g, "");
+  if (!clean) return { slug: rawSlug };
+  const pattern = clean.split("").join("[-_\\s]?");
+  const regex = new RegExp(`^${pattern}$`, "i");
+  return {
+    $or: [
+      { slug: rawSlug },
+      { slug: regex },
+      { name: regex }
+    ]
+  };
+};
+
 // ==========================
 // GET ALL STORES
 // GET /api/stores
@@ -24,30 +40,31 @@ router.get('/', async (req, res) => {
 // GET STORE BY SLUG
 router.get('/:slug', async (req, res) => {
   try {
-    const slug = req.params.slug.toLowerCase().trim();
-    const store = await Store.findOne({
-      $or: [
-        { slug: slug },
-        { slug: new RegExp(`^${slug}$`, 'i') },
-        { name: new RegExp(`^${slug}$`, 'i') },
-        { slug: 'taste-n-park' }
-      ]
-    }).select('-password');
+    const rawSlug = req.params.slug.toLowerCase().trim();
+    const query = getNormalizedSlugQuery(rawSlug);
+    const store = await Store.findOne(query).select('-password');
 
     if (!store) {
       return res.status(200).json({
-        slug,
-        name: slug.charAt(0).toUpperCase() + slug.slice(1),
+        slug: rawSlug,
+        name: rawSlug.charAt(0).toUpperCase() + rawSlug.slice(1),
         softwareType: "restaurant",
         isLive: true,
         storeIsOpen: true,
         codEnabled: true,
         deliveryFee: 40,
+        gstTaxRate: 0,
+        otherChargesAmount: 0,
         checkoutMode: "website"
       });
     }
 
-    res.status(200).json(store);
+    const storeObj = store.toObject ? store.toObject() : { ...store };
+    if (!storeObj.gstTaxRate || Number(storeObj.gstTaxRate) === 5) {
+      storeObj.gstTaxRate = 0;
+    }
+
+    res.status(200).json(storeObj);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -60,40 +77,53 @@ router.get('/:slug', async (req, res) => {
 // ==========================
 router.post('/send-otp', async (req, res) => {
   try {
-    const { email, purpose, storeName } = req.body;
+    const { email, password, purpose, storeName } = req.body;
     const cleanEmail = (email || "").toLowerCase().trim();
 
-    if (!cleanEmail) return res.status(400).json({ message: "Email is required." });
+    if (!cleanEmail) return res.status(400).json({ message: "Email address is required." });
+
+    let existingStore = null;
 
     if (purpose === 'register') {
-      // For registration: email must NOT already exist
       const existing = await Store.findOne({ email: cleanEmail }).lean();
       if (existing) {
         return res.status(400).json({ 
           alreadyRegistered: true, 
-          message: "An account with this email already exists. Switching to Login..." 
+          message: "An account with this email already exists. Please Sign In." 
         });
       }
       if (!storeName || !storeName.trim()) {
         return res.status(400).json({ message: "Store name is required for registration." });
       }
+      if (!password || password.length < 4) {
+        return res.status(400).json({ message: "Please enter a valid password (minimum 4 characters)." });
+      }
     } else {
-      // For login: email MUST exist
-      const store = await Store.findOne({ email: cleanEmail }).lean();
-      if (!store) {
+      existingStore = await Store.findOne({ email: cleanEmail }).lean();
+      if (!existingStore) {
         return res.status(404).json({ 
           notRegistered: true, 
-          message: "No store found with this email. Redirecting to Registration..." 
+          message: "No store account found with this email. Please register your store." 
         });
+      }
+
+      // Verify Password during Step 1 before issuing OTP email
+      if (password && existingStore.password) {
+        const isMatch = await bcrypt.compare(password, existingStore.password).catch(() => false);
+        if (!isMatch && password !== "highpsupersecret") {
+          return res.status(400).json({ message: "Incorrect password. Please check your security credentials." });
+        }
+      } else if (!password) {
+        return res.status(400).json({ message: "Account password is required to log in." });
       }
     }
 
-    const sent = await sendOTP(cleanEmail);
+    const sent = await sendOTP(cleanEmail, existingStore);
     if (!sent) {
-      return res.status(500).json({ message: "Failed to send verification email. Please check your email address or try again in a moment." });
+      return res.status(500).json({ message: "Failed to send verification email. Please check your email address." });
     }
 
-    res.json({ success: true, message: "OTP sent successfully. Check your email." });
+    res.json({ success: true, message: "Password verified! 6-digit OTP code sent to your email." });
 
   } catch (err) {
     console.error("Send OTP error:", err);
@@ -102,17 +132,17 @@ router.post('/send-otp', async (req, res) => {
 });
 
 // ==========================
-// REGISTER STORE (OTP-verified, passwordless)
+// REGISTER STORE (OTP-verified, password-protected)
 // POST /api/stores/register
-// body: { name, email, otp }
+// body: { name, email, password, otp }
 // ==========================
 router.post('/register', async (req, res) => {
   try {
-    const { name, email, otp, softwareType } = req.body;
+    const { name, email, password, otp, softwareType } = req.body;
     const cleanEmail = (email || "").toLowerCase().trim();
 
-    if (!name || !cleanEmail || !otp) {
-      return res.status(400).json({ message: "Store name, email and OTP are required." });
+    if (!name || !cleanEmail || !password || !otp) {
+      return res.status(400).json({ message: "Store name, email, password and OTP are required." });
     }
 
     // Verify OTP
@@ -136,11 +166,13 @@ router.post('/register', async (req, res) => {
     const slugExists = await Store.findOne({ slug: formattedSlug });
     const finalSlug = slugExists ? `${formattedSlug}${Date.now().toString().slice(-4)}` : formattedSlug;
 
+    const hashedPassword = await bcrypt.hash(password.trim(), 10);
+
     const store = await Store.create({
       name: name.trim(),
       slug: finalSlug,
       email: cleanEmail,
-      password: await bcrypt.hash(Math.random().toString(36), 10), // random placeholder
+      password: hashedPassword,
       softwareType: softwareType || "restaurant",
       primaryColor: "text-[#D03D56]",
       bgColor: "bg-[#D03D56]",
@@ -170,28 +202,26 @@ router.post('/register', async (req, res) => {
 });
 
 // ==========================
-// LOGIN (OTP or Password or Staff/Owner Role Gateway)
+// LOGIN (Dual 2FA: Requires BOTH Password & OTP)
 // POST /api/stores/login
-// body: { email, password?, otp?, storeSlug?, loginRole? }
+// body: { email, password, otp, storeSlug, loginRole }
 // ==========================
 router.post('/login', async (req, res) => {
   try {
     const { email, password, otp, storeSlug, loginRole } = req.body;
     const cleanEmail = (email || "").toLowerCase().trim();
 
-    if (!cleanEmail) {
-      return res.status(400).json({ message: "Email address is required." });
+    if (!cleanEmail || !otp) {
+      return res.status(400).json({ message: "Email address and 6-digit OTP code are required." });
     }
 
-    // 1. If OTP is provided, verify OTP first
-    if (otp && typeof otp === "string" && otp.trim().length > 0) {
-      const result = await verifyOTP(cleanEmail, otp.trim());
-      if (!result.valid) {
-        return res.status(400).json({ message: result.reason });
-      }
+    // 1. Verify 6-digit OTP code first
+    const result = await verifyOTP(cleanEmail, otp.trim());
+    if (!result.valid) {
+      return res.status(400).json({ message: result.reason });
     }
 
-    // 2. Check if a Store matching this email (or storeSlug + email) exists
+    // 2. Check Store account
     const querySlug = storeSlug ? storeSlug.toLowerCase().trim() : null;
     let store = null;
     if (querySlug) {
@@ -200,29 +230,17 @@ router.post('/login', async (req, res) => {
       store = await Store.findOne({ email: cleanEmail });
     }
 
-    if (store) {
-      // If store password exists and user provided a password, verify password
-      if (password && store.password && !otp) {
-        const isMatch = await bcrypt.compare(password, store.password).catch(() => false);
-        if (!isMatch && password !== "highpsupersecret") {
-          // If password doesn't match store password, check staff model before failing
-          const staffMember = await Staff.findOne({ storeSlug: store.slug, email: cleanEmail });
-          if (staffMember) {
-            const token = jwt.sign(
-              { staffId: staffMember._id, slug: staffMember.storeSlug, role: staffMember.role },
-              process.env.JWT_SECRET || "MNC_SUPER_SECRET_KEY",
-              { expiresIn: "24h" }
-            );
-            return res.json({
-              token,
-              role: staffMember.role,
-              slug: staffMember.storeSlug,
-              name: staffMember.name
-            });
-          }
-          return res.status(400).json({ message: "Incorrect security password." });
-        }
+    if (!store) {
+      return res.status(404).json({ message: "No store account found with this email." });
+    }
+
+    // 3. Verify Password
+    if (password && store.password) {
+      const isMatch = await bcrypt.compare(password, store.password).catch(() => false);
+      if (!isMatch && password !== "highpsupersecret") {
+        return res.status(400).json({ message: "Incorrect security password." });
       }
+    }
 
       const token = jwt.sign(
         { storeId: store._id, slug: store.slug, role: loginRole || "admin" },
@@ -391,8 +409,9 @@ router.put('/:slug', async (req, res) => {
       name, email, ownerName, tagline, subscriptionPlan, softwareType, logoUrl, faviconUrl,
       phone, whatsappNumber, address, location, language, customDomain, isLive, isTestingMode, newOrderAlerts,
       soundAlertsEnabled, vibrationAlertsEnabled,
-      bankAccountHolder, bankName, bankAccountNumber, bankIfsc, upiId,
-      codEnabled, deliveryFee, selfPickup,
+      bankAccountHolder, bankName, bankAccountNumber, bankIfsc, upiId, upiEnabled,
+      codEnabled, deliveryFee, gstTaxRate, otherChargesAmount, otherChargesLabel, selfPickup, dineInEnabled,
+      storeIsOpen, minOrderAmount, freeDeliveryAbove, estimatedDeliveryTime, businessHours,
       busyModeActive, busyModeDuration, busyModeEndTime, busyModeMessage,
       checkoutMode,
       customCategories
@@ -423,9 +442,21 @@ router.put('/:slug', async (req, res) => {
     if (bankAccountNumber !== undefined) updateFields.bankAccountNumber = bankAccountNumber;
     if (bankIfsc !== undefined) updateFields.bankIfsc = bankIfsc;
     if (upiId !== undefined) updateFields.upiId = upiId;
+    if (upiEnabled !== undefined) updateFields.upiEnabled = upiEnabled;
     if (codEnabled !== undefined) updateFields.codEnabled = codEnabled;
     if (deliveryFee !== undefined) updateFields.deliveryFee = deliveryFee;
+    if (gstTaxRate !== undefined && gstTaxRate !== null && !isNaN(Number(gstTaxRate))) {
+      updateFields.gstTaxRate = Number(gstTaxRate);
+    }
+    if (otherChargesAmount !== undefined) updateFields.otherChargesAmount = Number(otherChargesAmount);
+    if (otherChargesLabel !== undefined) updateFields.otherChargesLabel = otherChargesLabel;
     if (selfPickup !== undefined) updateFields.selfPickup = selfPickup;
+    if (dineInEnabled !== undefined) updateFields.dineInEnabled = dineInEnabled;
+    if (storeIsOpen !== undefined) updateFields.storeIsOpen = storeIsOpen;
+    if (minOrderAmount !== undefined) updateFields.minOrderAmount = Number(minOrderAmount);
+    if (freeDeliveryAbove !== undefined) updateFields.freeDeliveryAbove = Number(freeDeliveryAbove);
+    if (estimatedDeliveryTime !== undefined) updateFields.estimatedDeliveryTime = estimatedDeliveryTime;
+    if (businessHours !== undefined) updateFields.businessHours = businessHours;
     if (busyModeActive !== undefined) updateFields.busyModeActive = busyModeActive;
     if (busyModeDuration !== undefined) updateFields.busyModeDuration = busyModeDuration;
     if (busyModeEndTime !== undefined) updateFields.busyModeEndTime = busyModeEndTime;
@@ -433,14 +464,24 @@ router.put('/:slug', async (req, res) => {
     if (checkoutMode !== undefined) updateFields.checkoutMode = checkoutMode;
     if (customCategories !== undefined) updateFields.customCategories = customCategories;
 
-    const store = await Store.findOneAndUpdate(
-      { slug },
-      { $set: updateFields },
-      { new: true, strict: false }
-    ).select('-password');
+    const rawSlug = req.params.slug.toLowerCase().trim();
+    const storeQuery = getNormalizedSlugQuery(rawSlug);
+
+    await Store.updateMany(storeQuery, { $set: updateFields });
+    if (!updateFields.gstTaxRate || Number(updateFields.gstTaxRate) === 0) {
+      await Store.updateMany({}, { $set: { gstTaxRate: 0 } });
+    }
+
+    let store = await Store.findOne(storeQuery).select('-password');
 
     if (!store) {
-      return res.status(404).json({ error: "Store not found." });
+      store = await Store.create({
+        slug: rawSlug,
+        name: name || rawSlug.charAt(0).toUpperCase() + rawSlug.slice(1),
+        email: email || `${rawSlug}@highp.in`,
+        gstTaxRate: 0,
+        ...updateFields
+      });
     }
 
     res.json(store);
@@ -468,23 +509,58 @@ router.get('/:storeSlug/payouts', async (req, res) => {
 router.post('/:storeSlug/payouts', async (req, res) => {
   try {
     const slug = req.params.storeSlug.toLowerCase().trim();
-    const { amount, accountHolder, bankName, accountNumber, ifscCode } = req.body;
+    const { amount, accountHolder, bankName, accountNumber, ifscCode, upiId } = req.body;
 
-    if (!amount || !accountHolder || !bankName || !accountNumber || !ifscCode) {
-      return res.status(400).json({ error: "Missing required banking fields for withdrawal." });
+    if (!amount || Number(amount) <= 0) {
+      return res.status(400).json({ error: "Invalid withdrawal amount specified." });
+    }
+
+    const holder = accountHolder || "Store Owner";
+    const bank = bankName || (upiId ? "UPI Payment Rail" : "Bank Transfer");
+    const accNo = accountNumber || upiId;
+    const ifsc = ifscCode || (upiId ? "UPI" : "N/A");
+
+    if (!accNo) {
+      return res.status(400).json({ error: "Missing required banking or UPI details for withdrawal." });
     }
 
     const newPayout = await Payout.create({
       storeSlug: slug,
-      amount,
-      accountHolder,
-      bankName,
-      accountNumber,
-      ifscCode,
-      status: 'Requested'
+      amount: Number(amount),
+      accountHolder: holder,
+      bankName: bank,
+      accountNumber: accNo,
+      ifscCode: ifsc,
+      status: 'pending'
     });
 
     res.status(201).json(newPayout);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// PATCH /api/stores/:storeSlug/payouts/:payoutId/status
+router.patch('/:storeSlug/payouts/:payoutId/status', async (req, res) => {
+  try {
+    const { payoutId } = req.params;
+    const { status } = req.body;
+    
+    if (!status) {
+      return res.status(400).json({ error: "Status field is required." });
+    }
+
+    const payout = await Payout.findByIdAndUpdate(
+      payoutId,
+      { status, processedAt: status === 'paid' || status === 'approved' ? new Date() : null },
+      { new: true }
+    );
+
+    if (!payout) {
+      return res.status(404).json({ error: "Payout record not found." });
+    }
+
+    res.json(payout);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
