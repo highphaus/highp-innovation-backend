@@ -19,6 +19,17 @@ app.use(cors());
 app.use(express.json({ limit: '20mb' }));
 app.use(express.urlencoded({ limit: '20mb', extended: true }));
 
+// Guarantee MongoDB connection is active before processing API routes on Vercel
+app.use(async (req, res, next) => {
+  try {
+    await connectDB();
+    next();
+  } catch (err) {
+    console.error("DB Connection Middleware Error:", err);
+    res.status(500).json({ error: "Database Connection Failure" });
+  }
+});
+
 // Health Check Routes
 app.get('/', (req, res) => {
   res.status(200).json({
