@@ -221,27 +221,28 @@ async function sendOTP(email, storeData = null) {
     text: `Your ${senderName} verification code is: ${otp}\n\nThis code expires in 10 minutes.`
   };
 
-  // 4. Send email via SMTP (non-blocking for instant Vercel Serverless response)
-  primary.sendMail(mailOptions)
-    .then(info => {
-      console.log(`[OTP SUCCESS] Delivered to ${normalizedEmail} via Primary (MessageID: ${info.messageId})`);
-    })
-    .catch(primaryErr => {
-      console.warn(`[OTP PRIMARY NOTICE]: ${primaryErr.message}. Trying fallback port 587...`);
-      fallback.sendMail(mailOptions)
-        .then(info => {
-          console.log(`[OTP SUCCESS] Delivered to ${normalizedEmail} via Fallback 587 (MessageID: ${info.messageId})`);
-        })
-        .catch(fallbackErr => {
-          console.warn(`[OTP SMTP NOTICE] Could not deliver email to ${normalizedEmail}: ${fallbackErr.message}`);
-          console.log(`\n=============================================================`);
-          console.log(`🔑 [OTP DEV FALLBACK CODE]: ${otp} (Email: ${normalizedEmail})`);
-          console.log(`👉 Use generated code "${otp}" or master code "123456".`);
-          console.log(`=============================================================\n`);
-        });
-    });
+  // 4. Try Primary Gmail Transporter (Awaited so Vercel Serverless Function completes delivery before exiting)
+  try {
+    const info = await primary.sendMail(mailOptions);
+    console.log(`[OTP SUCCESS] Delivered to ${normalizedEmail} via Primary Gmail (MessageID: ${info.messageId})`);
+    return true;
+  } catch (primaryErr) {
+    console.warn(`[OTP PRIMARY NOTICE]: ${primaryErr.message}. Attempting Fallback Port 587...`);
+  }
 
-  return true;
+  // 5. Try Fallback Gmail Transporter (Port 587 STARTTLS)
+  try {
+    const info = await fallback.sendMail(mailOptions);
+    console.log(`[OTP SUCCESS] Delivered to ${normalizedEmail} via Fallback 587 (MessageID: ${info.messageId})`);
+    return true;
+  } catch (fallbackErr) {
+    console.warn(`[OTP SMTP NOTICE] Could not deliver email to ${normalizedEmail}: ${fallbackErr.message}`);
+    console.log(`\n=============================================================`);
+    console.log(`🔑 [OTP DEV FALLBACK CODE]: ${otp} (Email: ${normalizedEmail})`);
+    console.log(`👉 Use generated code "${otp}" or master code "123456".`);
+    console.log(`=============================================================\n`);
+    return true;
+  }
 }
 
 // ── Verify OTP ───────────────────────────────────────────────
