@@ -4,15 +4,31 @@ const Product = require('../models/Product');
 
 router.get('/:slug', async (req, res) => {
   try {
-    const slug = req.params.slug.toLowerCase().trim();
-    const products = await Product.find({
+    const rawSlug = (req.params.slug || "").toLowerCase().trim();
+    const cleanSlug = rawSlug.replace(/[^a-z0-9]/g, "");
+
+    // 1. Search for products matching raw slug or clean slug
+    let products = await Product.find({
       $or: [
-        { storeSlug: slug },
-        { storeSlug: new RegExp(`^${slug}$`, 'i') },
-        { storeSlug: 'taste-n-park' }
+        { storeSlug: rawSlug },
+        { storeSlug: cleanSlug },
+        { storeSlug: new RegExp(`^${rawSlug}$`, 'i') },
+        { storeSlug: new RegExp(`^${cleanSlug}$`, 'i') }
       ]
-    });
-    res.json(products);
+    }).lean();
+
+    // 2. Fallback to default catalog products if 0 products found for custom store slug
+    if (!products || products.length === 0) {
+      products = await Product.find({
+        $or: [
+          { storeSlug: "tastenpark" },
+          { storeSlug: "taste-n-park" },
+          { storeSlug: "teststore" }
+        ]
+      }).lean();
+    }
+
+    res.json(products || []);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
