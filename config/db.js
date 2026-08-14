@@ -1,42 +1,53 @@
 const mongoose = require('mongoose');
 const dns = require('dns');
 
-// Force IPv4 first to prevent DNS SRV hangs on Windows/cloud hosts
+// Force IPv4 first to prevent DNS SRV lookup delays
 if (dns.setDefaultResultOrder) {
   dns.setDefaultResultOrder('ipv4first');
 }
 
-const connectDB = async () => {
-  const primaryURI = process.env.MONGO_URI || process.env.DATABASE_URL;
-  const fallbackURI = 'mongodb://127.0.0.1:27017/highp';
+let cached = global.mongoose;
+if (!cached) {
+  cached = global.mongoose = { conn: null, promise: null };
+}
 
+const connectDB = async () => {
+  // If connection is already established, return existing connection instantly (0ms)
+  if (mongoose.connection.readyState === 1) {
+    return mongoose.connection;
+  }
+  if (cached.conn) {
+    return cached.conn;
+  }
+
+  const primaryURI = process.env.MONGO_URI || process.env.DATABASE_URL;
   if (!primaryURI) {
     console.error("❌ Corporate Cloud Setup Failure: Missing connection string inside .env");
-    return;
+    return null;
+  }
+
+  if (!cached.promise) {
+    const opts = {
+      bufferCommands: false,
+      serverSelectionTimeoutMS: 5000,
+      connectTimeoutMS: 5000,
+      maxPoolSize: 10
+    };
+
+    cached.promise = mongoose.connect(primaryURI, opts).then((m) => {
+      console.log('🚀 MNC Enterprise Gateway: Connected to MongoDB Multi-Tenant Cluster');
+      return m;
+    });
   }
 
   try {
-    console.log('Connecting to Primary MongoDB Cluster...');
-    await mongoose.connect(primaryURI, {
-      serverSelectionTimeoutMS: 3000,
-      connectTimeoutMS: 3000
-    });
-    console.log('🚀 MNC Enterprise Gateway: Connected to MongoDB Multi-Tenant Cluster');
+    cached.conn = await cached.promise;
   } catch (err) {
-    console.warn(`⚠️ Primary MongoDB Connection Failed: ${err.message}`);
-    console.log('Falling back to local MongoDB instance...');
-    try {
-      await mongoose.connect(fallbackURI, {
-        serverSelectionTimeoutMS: 2000,
-        connectTimeoutMS: 2000
-      });
-      console.log('🚀 MNC Enterprise Gateway: Connected to Local MongoDB Instance successfully!');
-    } catch (fallbackErr) {
-      console.error('⚠️ Database Warning: Primary cloud & local DB connections temporarily unavailable.', fallbackErr.message);
-      console.log('🔄 Retrying DB connection in 10 seconds...');
-      setTimeout(() => connectDB(), 10000);
-    }
+    cached.promise = null;
+    console.error("⚠️ Primary MongoDB Connection Error:", err.message);
   }
+
+  return cached.conn;
 };
 
 module.exports = connectDB;
