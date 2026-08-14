@@ -24,8 +24,10 @@ router.post('/', async (req, res) => {
     const { storeSlug } = req.body;
     if (!storeSlug) return res.status(400).json({ error: "Missing storeSlug parameter." });
     
+    const defaultImg = "https://images.unsplash.com/photo-1546069901-ba9599a7e63c?auto=format&fit=crop&w=600&q=80";
     const newProduct = await Product.create({
       ...req.body,
+      image: (req.body.image && req.body.image.trim().length > 0) ? req.body.image.trim() : defaultImg,
       storeSlug: storeSlug.toLowerCase().trim()
     });
     res.status(201).json(newProduct);

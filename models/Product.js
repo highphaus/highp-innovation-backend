@@ -24,7 +24,7 @@ const ProductSchema = new mongoose.Schema({
   },
   image: { 
     type: String,
-    required: true // Enforces high-quality visuals for enterprise brands
+    default: "https://images.unsplash.com/photo-1546069901-ba9599a7e63c?auto=format&fit=crop&w=600&q=80"
   },
   productId: { type: String, default: "" },
   category: { type: String, default: "" },
