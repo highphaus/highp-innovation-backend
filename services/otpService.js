@@ -62,7 +62,7 @@ function generateOTP() {
 // ── Store-Branded vs Platform HTML email template ────────────
 function buildEmailHTML(otp, storeData = null) {
   const isCustomer = Boolean(storeData && storeData.name);
-  const storeName = isCustomer ? storeData.name : "HighP Platform";
+  const storeName = isCustomer ? storeData.name : "HighP Store";
   const storeEmail = isCustomer && storeData.email ? storeData.email.trim() : "";
   const logoUrl = isCustomer && storeData.logoUrl ? storeData.logoUrl : "";
   const brandBadge = isCustomer 
@@ -70,15 +70,15 @@ function buildEmailHTML(otp, storeData = null) {
     : "HP";
   
   const headerBg = isCustomer ? "#D03D56" : "#0F172A";
-  const titleText = isCustomer ? `${storeName} Login Verification` : `HighP Platform Verification Code`;
+  const titleText = isCustomer ? `${storeName} Login Verification` : `HighP Store Verification Code`;
   
   const bodyIntro = isCustomer
     ? `You are logging in to <strong>${storeName}</strong>. Use the verification code below to access your account at <strong>${storeName}</strong>. This code is valid for <strong>10 minutes</strong>.`
-    : `Use the code below to verify your HighP Platform account identity. It expires in <strong>10 minutes</strong>.`;
+    : `Use the code below to verify your HighP Store account identity. It expires in <strong>10 minutes</strong>.`;
   
   const footerText = isCustomer
     ? `© ${new Date().getFullYear()} ${storeName} ${storeEmail ? `(${storeEmail})` : ''} · Official Storefront &nbsp;·&nbsp; Sent directly on behalf of ${storeName}`
-    : `© ${new Date().getFullYear()} HighP Platform · Enterprise Cloud &nbsp;·&nbsp; Do not reply to this email`;
+    : `© ${new Date().getFullYear()} HighP Store · Enterprise Cloud &nbsp;·&nbsp; Do not reply to this email`;
 
   return `
 <!DOCTYPE html>
@@ -204,8 +204,8 @@ async function sendOTP(email, storeData = null) {
   // 3. Prepare email payload with Store Branding & Store Email Sender
   const { primary, fallback, user } = getTransporters();
   const isCustomer = Boolean(storeData && storeData.name);
-  const storeName = isCustomer ? storeData.name : "HighP Platform";
-  const senderName = isCustomer ? storeName : "HighP Platform";
+  const storeName = isCustomer ? storeData.name : "HighP Store";
+  const senderName = isCustomer ? storeName : "HighP Store";
   const storeEmail = isCustomer && storeData.email ? storeData.email.trim() : "";
   const subject = isCustomer 
     ? `${otp} is your verification code for ${storeName}`
